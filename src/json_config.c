@@ -12,7 +12,7 @@
 
 /**
  * Loads JSON data from a file path
- * 
+ *
  * @param filepath Path to the JSON file
  * @return Pointer to JsonValue or NULL on error
  */
@@ -21,8 +21,196 @@ JsonValue *load_config(const char *filepath) {
 }
 
 /**
+ * Compare function for sorting JSON keys alphabetically
+ */
+static int compare_json_keys(const void *a, const void *b) {
+    const JsonKeyValue *kv_a = *(const JsonKeyValue **)a;
+    const JsonKeyValue *kv_b = *(const JsonKeyValue **)b;
+
+    if (!kv_a->key && !kv_b->key) return 0;
+    if (!kv_a->key) return -1;
+    if (!kv_b->key) return 1;
+
+    return strcmp(kv_a->key, kv_b->key);
+}
+
+/**
+ * Writes a JSON value directly to a file with proper indentation
+ */
+static int write_json_to_file(FILE *file, JsonValue *json, int indent) {
+    if (!file || !json) {
+        return 0;
+    }
+
+    int success = 1;
+
+    switch (json->type) {
+        case JSON_NULL:
+            success = (fprintf(file, "null") > 0);
+            break;
+        case JSON_BOOL:
+            success = (fprintf(file, "%s", json->value.boolean ? "true" : "false") > 0);
+            break;
+        case JSON_NUMBER:
+            // Check if it's an integer
+            if (json->value.number == (int64_t)json->value.number) {
+                success = (fprintf(file, "%" PRId64, (int64_t)json->value.number) > 0);
+            } else {
+                success = (fprintf(file, "%g", json->value.number) > 0);
+            }
+            break;
+        case JSON_STRING:
+            if (json->value.string) {
+                // Simple string escaping for common characters
+                success = (fprintf(file, "\"") > 0);
+                for (const char *p = json->value.string; *p; p++) {
+                    switch (*p) {
+                        case '\\': success = success && (fprintf(file, "\\\\") > 0); break;
+                        case '\"': success = success && (fprintf(file, "\\\"") > 0); break;
+                        case '\b': success = success && (fprintf(file, "\\b") > 0); break;
+                        case '\f': success = success && (fprintf(file, "\\f") > 0); break;
+                        case '\n': success = success && (fprintf(file, "\\n") > 0); break;
+                        case '\r': success = success && (fprintf(file, "\\r") > 0); break;
+                        case '\t': success = success && (fprintf(file, "\\t") > 0); break;
+                        default:
+                            if ((unsigned char)*p < 32) {
+                                success = success && (fprintf(file, "\\u%04x", (unsigned char)*p) > 0);
+                            } else {
+                                success = success && (fprintf(file, "%c", *p) > 0);
+                            }
+                            break;
+                    }
+                    if (!success) break;
+                }
+                success = success && (fprintf(file, "\"") > 0);
+            } else {
+                success = (fprintf(file, "\"\"") > 0);
+            }
+            break;
+        case JSON_OBJECT: {
+            if (!json->value.object_head) {
+                success = (fprintf(file, "{}") > 0);
+                break;
+            }
+
+            // Count the number of key-value pairs
+            int count = 0;
+            JsonKeyValue *kv = json->value.object_head;
+            while (kv) {
+                count++;
+                kv = kv->next;
+            }
+
+            // Create an array of pointers to key-value pairs
+            JsonKeyValue **kvs = (JsonKeyValue **)malloc(count * sizeof(JsonKeyValue *));
+            if (!kvs) {
+                fprintf(stderr, "Error: Memory allocation failed for sorting JSON keys.\n");
+                return 0;
+            }
+
+            // Fill the array
+            kv = json->value.object_head;
+            for (int i = 0; i < count; i++) {
+                kvs[i] = kv;
+                kv = kv->next;
+            }
+
+            // Sort the array alphabetically by key
+            qsort(kvs, count, sizeof(JsonKeyValue *), compare_json_keys);
+
+            // Write the sorted key-value pairs
+            success = (fprintf(file, "{\n") > 0);
+            int first = 1;
+
+            for (int i = 0; i < count && success; i++) {
+                if (!first) {
+                    success = success && (fprintf(file, ",\n") > 0);
+                }
+
+                // Print indentation
+                for (int j = 0; j < indent + 1 && success; j++) {
+                    success = success && (fprintf(file, "  ") > 0);
+                }
+
+                // Print key
+                success = success && (fprintf(file, "\"%s\": ", kvs[i]->key ? kvs[i]->key : "") > 0);
+
+                // Print value
+                if (kvs[i]->value) {
+                    success = success && write_json_to_file(file, kvs[i]->value, indent + 1);
+                } else {
+                    success = success && (fprintf(file, "null") > 0);
+                }
+
+                first = 0;
+            }
+
+            // Free the array
+            free(kvs);
+
+            if (success) {
+                success = (fprintf(file, "\n") > 0);
+                // Print indentation for closing brace
+                for (int i = 0; i < indent && success; i++) {
+                    success = success && (fprintf(file, "  ") > 0);
+                }
+                success = success && (fprintf(file, "}") > 0);
+            }
+            break;
+        }
+        case JSON_ARRAY: {
+            if (!json->value.array_head) {
+                success = (fprintf(file, "[]") > 0);
+                break;
+            }
+
+            success = (fprintf(file, "[\n") > 0);
+            JsonArrayItem *item = json->value.array_head;
+            int first = 1;
+
+            while (item && success) {
+                if (!first) {
+                    success = success && (fprintf(file, ",\n") > 0);
+                }
+
+                // Print indentation
+                for (int i = 0; i < indent + 1 && success; i++) {
+                    success = success && (fprintf(file, "  ") > 0);
+                }
+
+                // Print value
+                if (item->value) {
+                    success = success && write_json_to_file(file, item->value, indent + 1);
+                } else {
+                    success = success && (fprintf(file, "null") > 0);
+                }
+
+                first = 0;
+                item = item->next;
+            }
+
+            if (success) {
+                success = (fprintf(file, "\n") > 0);
+                // Print indentation for closing bracket
+                for (int i = 0; i < indent && success; i++) {
+                    success = success && (fprintf(file, "  ") > 0);
+                }
+                success = success && (fprintf(file, "]") > 0);
+            }
+            break;
+        }
+        default:
+            fprintf(stderr, "Error: Unknown JSON type.\n");
+            success = 0;
+            break;
+    }
+
+    return success;
+}
+
+/**
  * Saves JSON data to a file path
- * 
+ *
  * @param filepath Path to save the JSON file
  * @param json The JSON object to save
  * @return 1 on success, 0 on failure
@@ -31,36 +219,34 @@ int save_config(const char *filepath, JsonValue *json) {
     if (!json) {
         return 0;
     }
-    
-    char *json_str = json_to_string(json, 1); // Pretty print
-    if (!json_str) {
-        return 0;
-    }
-    
+
     FILE *file = fopen(filepath, "w");
     if (!file) {
-        fprintf(stderr, "Error: Failed to open file '%s' for writing: %s\n", 
+        fprintf(stderr, "Error: Failed to open file '%s' for writing: %s\n",
                 filepath, strerror(errno));
-        free(json_str);
         return 0;
     }
-    
-    size_t len = strlen(json_str);
-    size_t written = fwrite(json_str, 1, len, file);
+
+    int success = write_json_to_file(file, json, 0);
+
+    // Add a final newline
+    if (success) {
+        success = (fprintf(file, "\n") > 0);
+    }
+
     fclose(file);
-    free(json_str);
-    
-    if (written != len) {
+
+    if (!success) {
         fprintf(stderr, "Error: Failed to write complete JSON to '%s'.\n", filepath);
         return 0;
     }
-    
+
     return 1;
 }
 
 /**
  * Gets a nested item using dot notation
- * 
+ *
  * @param object The JSON object to search in
  * @param key The key path using dot notation (e.g., "section.key")
  * @return Pointer to JsonValue or NULL if not found
@@ -105,7 +291,7 @@ JsonValue *get_nested_item(JsonValue *object, const char *key) {
 
 /**
  * Sets a nested item using dot notation
- * 
+ *
  * @param object The JSON object to modify
  * @param key The key path using dot notation (e.g., "section.key")
  * @param value_str The string representation of the value to set
@@ -126,7 +312,7 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
     char *parts[256]; // Assuming a reasonable max depth
     int part_count = 0;
     char *token = strtok(key_copy, ".");
-    
+
     while (token != NULL && part_count < 256) {
         parts[part_count++] = token;
         token = strtok(NULL, ".");
@@ -140,10 +326,10 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
     // Navigate to the parent object
     JsonValue *current = object;
     int i;
-    
+
     for (i = 0; i < part_count - 1; i++) {
         JsonValue *next = NULL;
-        
+
         if (current->type == JSON_OBJECT) {
             next = get_object_item(current, parts[i]);
             if (!next) {
@@ -165,7 +351,7 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
                 free(key_copy);
                 return 0;
             }
-            
+
             // Extend array if needed
             while (index >= get_array_size(current)) {
                 JsonValue *new_obj = create_json_value(JSON_OBJECT);
@@ -176,7 +362,7 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
                 }
                 add_to_array(current, new_obj);
             }
-            
+
             current = get_array_item(current, index);
         } else {
             // Cannot traverse further
@@ -188,7 +374,7 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
 
     // Determine the value type and create the appropriate JSON value
     JsonValue *new_value = NULL;
-    
+
     if (strcmp(value_str, "true") == 0) {
         new_value = create_json_value(JSON_BOOL);
         if (new_value) new_value->value.boolean = 1;
@@ -219,7 +405,7 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
     // Add or replace the item in the parent object
     const char *last_key = parts[part_count - 1];
     int success = 0;
-    
+
     if (current->type == JSON_OBJECT) {
         success = add_to_object(current, last_key, new_value);
     } else if (current->type == JSON_ARRAY) {
@@ -231,7 +417,7 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
             free_json_value(new_value);
             return 0;
         }
-        
+
         // Extend array if needed
         while (index >= get_array_size(current)) {
             JsonValue *null_value = create_json_value(JSON_NULL);
@@ -243,16 +429,16 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
             }
             add_to_array(current, null_value);
         }
-        
+
         // Replace the item at the index
         JsonArrayItem *item = current->value.array_head;
         int i = 0;
-        
+
         while (item && i < index) {
             item = item->next;
             i++;
         }
-        
+
         if (item) {
             free_json_value(item->value);
             item->value = new_value;
@@ -271,9 +457,151 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
     return success;
 }
 
+// Forward declaration for recursive printing
+static void print_json_value(JsonValue *item, int indent);
+
+/**
+ * Prints indentation
+ */
+static void print_indent(int indent) {
+    for (int i = 0; i < indent; i++) {
+        printf("  ");
+    }
+}
+
+/**
+ * Recursively prints a JSON value with proper indentation
+ */
+static void print_json_value(JsonValue *item, int indent) {
+    if (!item) {
+        printf("null");
+        return;
+    }
+
+    switch (item->type) {
+        case JSON_NULL:
+            printf("null");
+            break;
+        case JSON_BOOL:
+            printf("%s", item->value.boolean ? "true" : "false");
+            break;
+        case JSON_NUMBER:
+            // Check if it's an integer
+            if (item->value.number == (int64_t)item->value.number) {
+                printf("%" PRId64, (int64_t)item->value.number);
+            } else {
+                printf("%g", item->value.number);
+            }
+            break;
+        case JSON_STRING:
+            if (item->value.string) {
+                printf("\"%s\"", item->value.string);
+            } else {
+                printf("\"\"");
+            }
+            break;
+        case JSON_OBJECT: {
+            if (!item->value.object_head) {
+                printf("{}");
+                break;
+            }
+
+            // Count the number of key-value pairs
+            int count = 0;
+            JsonKeyValue *kv = item->value.object_head;
+            while (kv) {
+                count++;
+                kv = kv->next;
+            }
+
+            // Create an array of pointers to key-value pairs
+            JsonKeyValue **kvs = (JsonKeyValue **)malloc(count * sizeof(JsonKeyValue *));
+            if (!kvs) {
+                fprintf(stderr, "Error: Memory allocation failed for sorting JSON keys.\n");
+                printf("{...}"); // Fallback
+                return;
+            }
+
+            // Fill the array
+            kv = item->value.object_head;
+            for (int i = 0; i < count; i++) {
+                kvs[i] = kv;
+                kv = kv->next;
+            }
+
+            // Sort the array alphabetically by key
+            qsort(kvs, count, sizeof(JsonKeyValue *), compare_json_keys);
+
+            // Print the sorted key-value pairs
+            printf("{\n");
+            int first = 1;
+
+            for (int i = 0; i < count; i++) {
+                if (!first) {
+                    printf(",\n");
+                }
+
+                print_indent(indent + 1);
+                printf("\"%s\": ", kvs[i]->key ? kvs[i]->key : "");
+
+                if (kvs[i]->value) {
+                    print_json_value(kvs[i]->value, indent + 1);
+                } else {
+                    printf("null");
+                }
+
+                first = 0;
+            }
+
+            // Free the array
+            free(kvs);
+
+            printf("\n");
+            print_indent(indent);
+            printf("}");
+            break;
+        }
+        case JSON_ARRAY: {
+            if (!item->value.array_head) {
+                printf("[]");
+                break;
+            }
+
+            printf("[\n");
+            JsonArrayItem *item_ptr = item->value.array_head;
+            int first = 1;
+
+            while (item_ptr) {
+                if (!first) {
+                    printf(",\n");
+                }
+
+                print_indent(indent + 1);
+
+                if (item_ptr->value) {
+                    print_json_value(item_ptr->value, indent + 1);
+                } else {
+                    printf("null");
+                }
+
+                first = 0;
+                item_ptr = item_ptr->next;
+            }
+
+            printf("\n");
+            print_indent(indent);
+            printf("]");
+            break;
+        }
+        default:
+            printf("(unknown type)");
+            break;
+    }
+}
+
 /**
  * Prints a JSON item appropriately
- * 
+ *
  * @param item The JSON object to print
  */
 void print_item(JsonValue *item) {
@@ -282,36 +610,18 @@ void print_item(JsonValue *item) {
         return;
     }
 
-    switch (item->type) {
-        case JSON_NULL:
-            printf("null\n");
-            break;
-        case JSON_BOOL:
-            printf("%s\n", item->value.boolean ? "true" : "false");
-            break;
-        case JSON_NUMBER:
-            // Check if it's an integer
-            if (item->value.number == (int64_t)item->value.number) {
-                printf("%" PRId64 "\n", (int64_t)item->value.number);
-            } else {
-                printf("%g\n", item->value.number);
-            }
-            break;
-        case JSON_STRING:
-            printf("%s\n", item->value.string);
-            break;
-        case JSON_OBJECT:
-        case JSON_ARRAY: {
-            char *json_str = json_to_string(item, 1); // Pretty print
-            if (json_str) {
-                printf("%s\n", json_str);
-                free(json_str);
-            } else {
-                printf("Error: Failed to convert to JSON string\n");
-            }
-            break;
+    // Special case for printing a single number value
+    if (item->type == JSON_NUMBER) {
+        // Check if it's an integer
+        if (item->value.number == (int64_t)item->value.number) {
+            int64_t int_value = (int64_t)item->value.number;
+            printf("%" PRId64 "\n", int_value);
+        } else {
+            printf("%g\n", item->value.number);
         }
-        default:
-            fprintf(stderr, "Error: Unknown JSON type.\n");
+        return;
     }
+
+    print_json_value(item, 0);
+    printf("\n");
 }
