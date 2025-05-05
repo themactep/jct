@@ -1,6 +1,8 @@
 # JSON Configuration CLI Tool
 
-A command-line tool for reading and writing JSON configuration files. This tool is written in pure C with no external dependencies, making it suitable for cross-compilation and embedded systems.
+A command-line tool for reading and writing JSON configuration files.
+This tool is written in pure C with no external dependencies, making
+it suitable for cross-compilation and embedded systems.
 
 ## Features
 
@@ -22,44 +24,27 @@ To build the project for your local machine, run:
 make
 ```
 
-or explicitly:
-
-```bash
-make native
-```
-
 This will compile the source files and create the `jct` executable.
 
-### Cross-Compilation for MIPS
-
-To cross-compile for MIPS (mipsel) architecture, run:
-
-```bash
-make mipsel
-```
-
-This will create a `jct.mipsel` executable that can run on MIPS devices.
+### Cross-Compilation
 
 #### Toolchain Selection
 
-The Makefile supports multiple MIPS toolchains using the standard `CROSS_COMPILE` prefix:
+The Makefile supports multiple toolchains using the standard `CROSS_COMPILE` prefix:
 
 ```bash
-# Use the system GNU MIPS toolchain (default)
-make mipsel
-
-# Use the system GNU MIPS toolchain explicitly
-make CROSS_COMPILE=mipsel-linux-gnu- mipsel
+# Use prefix for a toolchain found in PATH
+make CROSS_COMPILE=mipsel-linux-gnu-
 
 # Use any custom toolchain with a full path
-make CROSS_COMPILE=/path/to/toolchain/bin/prefix- mipsel
+make CROSS_COMPILE=/path/to/toolchain/bin/prefix-
 ```
 
-You can also use these toolchain options with the release-mipsel target:
+You can also use these toolchain options with the release target:
 
 ```bash
-make CROSS_COMPILE=/path/to/toolchain/bin/mipsel-linux-musl- release-mipsel
-make CROSS_COMPILE=mipsel-linux-gnu- release-mipsel
+make CROSS_COMPILE=/path/to/toolchain/bin/mipsel-linux-musl- release
+make CROSS_COMPILE=mipsel-linux-gnu- release
 ```
 
 ### Optimized Builds
@@ -67,8 +52,7 @@ make CROSS_COMPILE=mipsel-linux-gnu- release-mipsel
 For optimized builds with smaller binary size:
 
 ```bash
-make release         # Optimized native build (stripped of debug info)
-make release-mipsel  # Optimized MIPS build (stripped of debug info)
+make release         # Optimized build (stripped of debug info)
 ```
 
 The optimized builds use the following techniques to reduce binary size:
