@@ -384,10 +384,10 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
     } else if (strcmp(value_str, "null") == 0) {
         new_value = create_json_value(JSON_NULL);
     } else {
-        // Try to parse as number
+        // Try to parse as number (but not if it's an empty string)
         char *endptr;
         double num = strtod(value_str, &endptr);
-        if (*endptr == '\0') { // Successfully parsed as a number
+        if (*endptr == '\0' && *value_str != '\0') { // Successfully parsed as a number and not empty
             new_value = create_json_value(JSON_NUMBER);
             if (new_value) new_value->value.number = num;
         } else { // Treat as string
@@ -619,6 +619,22 @@ void print_item(JsonValue *item) {
         } else {
             printf("%g\n", item->value.number);
         }
+        return;
+    }
+
+    // Special case for printing a single string value
+    if (item->type == JSON_STRING) {
+        if (item->value.string) {
+            printf("%s\n", item->value.string);
+        } else {
+            printf("\n");
+        }
+        return;
+    }
+
+    // Special case for printing a single boolean value
+    if (item->type == JSON_BOOL) {
+        printf("%s\n", item->value.boolean ? "true" : "false");
         return;
     }
 
