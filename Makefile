@@ -20,7 +20,7 @@ SOURCES = $(SRC_DIR)/json_value.c $(SRC_DIR)/json_parse.c $(SRC_DIR)/json_serial
 OBJECTS = $(SOURCES:.c=.o)
 TARGET = jct
 
-.PHONY: all clean distclean release help
+.PHONY: all clean distclean release help test
 
 # Default target
 all: $(TARGET)
@@ -32,6 +32,7 @@ help:
 	@echo "  make release          - Build optimized version"
 	@echo "  make clean            - Remove object files and executables"
 	@echo "  make distclean        - Remove all generated files"
+	@echo "  make test             - Run comprehensive test suite"
 	@echo "  make help             - Show this help message"
 	@echo ""
 	@echo "Using CROSS_COMPILE:"
@@ -51,8 +52,26 @@ $(TARGET): $(OBJECTS)
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Test target
+test: $(TARGET)
+	@echo "Running comprehensive test suite..."
+	@if [ ! -d "test" ]; then \
+		echo "Error: test directory not found"; \
+		exit 1; \
+	fi
+	@if [ ! -f "test/run_tests.sh" ]; then \
+		echo "Error: test/run_tests.sh not found"; \
+		exit 1; \
+	fi
+	@if [ ! -f "test/test_data.json" ]; then \
+		echo "Error: test/test_data.json not found"; \
+		exit 1; \
+	fi
+	@./test/run_tests.sh
+
 clean:
 	rm -f $(OBJECTS) $(TARGET) json_config_cli json_config_cli.mipsel
+	rm -f test/temp_config.json
 
 # Distclean removes all generated files, including object files, executables, and any temporary files
 distclean: clean
