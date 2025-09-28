@@ -9,6 +9,7 @@ STRIP = $(CROSS_COMPILE)strip
 # Flags
 CFLAGS_BASE = -Wall -Wextra -std=c99 -pedantic -D_POSIX_C_SOURCE=200809L
 CFLAGS = $(CFLAGS_BASE)
+CFLAGS_DEBUG = $(CFLAGS_BASE) -g -O0 -DDEBUG
 CFLAGS_RELEASE = $(CFLAGS_BASE) -Os -ffunction-sections -fdata-sections
 LDFLAGS_BASE =
 LDFLAGS = $(LDFLAGS_BASE)
@@ -20,7 +21,7 @@ SOURCES = $(SRC_DIR)/json_value.c $(SRC_DIR)/json_parse.c $(SRC_DIR)/json_serial
 OBJECTS = $(SOURCES:.c=.o)
 TARGET = jct
 
-.PHONY: all clean distclean release help test
+.PHONY: all clean distclean release debug help test
 
 # Default target
 all: $(TARGET)
@@ -29,6 +30,7 @@ all: $(TARGET)
 help:
 	@echo "Available targets:"
 	@echo "  make                  - Build regular version"
+	@echo "  make debug            - Build debug version with debug messages"
 	@echo "  make release          - Build optimized version"
 	@echo "  make clean            - Remove object files and executables"
 	@echo "  make distclean        - Remove all generated files"
@@ -38,6 +40,10 @@ help:
 	@echo "Using CROSS_COMPILE:"
 	@echo "  make CROSS_COMPILE=mipsel-linux-gnu-               - Use toolchain via PATH"
 	@echo "  make CROSS_COMPILE=/path/to/toolchain/bin/prefix-  - Use any custom toolchain"
+
+# Debug builds with debug symbols and messages
+debug: CFLAGS = $(CFLAGS_DEBUG)
+debug: $(TARGET)
 
 # Release builds with optimization
 release: CFLAGS = $(CFLAGS_RELEASE)

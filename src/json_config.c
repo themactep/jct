@@ -8,6 +8,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdint.h>
+#include <unistd.h>  // for getpid() and unlink()
 #include <inttypes.h>
 
 /**
@@ -38,10 +39,42 @@ static int compare_json_keys(const void *a, const void *b) {
  * Writes a JSON value directly to a file with proper indentation
  */
 static int write_json_to_file(FILE *file, JsonValue *json, int indent) {
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: write_json_to_file called with file=%p, json=%p, indent=%d\n",
+            (void*)file, (void*)json, indent);
+#endif
+
     if (!file || !json) {
+#ifdef DEBUG
+        fprintf(stderr, "DEBUG: write_json_to_file - null parameter: file=%p, json=%p\n",
+                (void*)file, (void*)json);
+#endif
         return 0;
     }
 
+    // Additional safety check - verify the json pointer is valid
+    // Check if the type field is within valid range
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: write_json_to_file - checking json type at %p\n", (void*)json);
+
+    // Read the raw bytes to see what's actually there
+    unsigned char *raw_bytes = (unsigned char*)json;
+    fprintf(stderr, "DEBUG: Raw bytes at json address: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+            raw_bytes[0], raw_bytes[1], raw_bytes[2], raw_bytes[3],
+            raw_bytes[4], raw_bytes[5], raw_bytes[6], raw_bytes[7]);
+#endif
+
+    if (json->type < JSON_NULL || json->type > JSON_OBJECT) {
+        fprintf(stderr, "Error: Invalid JSON type %d (0x%x) at address %p\n",
+                json->type, json->type, (void*)json);
+        fprintf(stderr, "Error: This looks like corrupted memory containing: '%.8s'\n",
+                (char*)json);
+        return 0;
+    }
+
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: write_json_to_file - json type is valid: %d\n", json->type);
+#endif
     int success = 1;
 
     switch (json->type) {
@@ -118,6 +151,16 @@ static int write_json_to_file(FILE *file, JsonValue *json, int indent) {
             // Sort the array alphabetically by key
             qsort(kvs, count, sizeof(JsonKeyValue *), compare_json_keys);
 
+            // Debug: Show all keys after sorting
+#ifdef DEBUG
+            fprintf(stderr, "DEBUG: After sorting, found %d keys:\n", count);
+            for (int i = 0; i < count; i++) {
+                fprintf(stderr, "DEBUG: kvs[%d]: key='%s' at %p, value=%p\n",
+                        i, kvs[i]->key ? kvs[i]->key : "NULL",
+                        (void*)kvs[i]->key, (void*)kvs[i]->value);
+            }
+#endif
+
             // Write the sorted key-value pairs
             success = (fprintf(file, "{\n") > 0);
             int first = 1;
@@ -132,11 +175,30 @@ static int write_json_to_file(FILE *file, JsonValue *json, int indent) {
                     success = success && (fprintf(file, "  ") > 0);
                 }
 
-                // Print key
+                // Print key with detailed debugging
+#ifdef DEBUG
+                fprintf(stderr, "DEBUG: Processing key '%s' at kvs[%d]\n",
+                        kvs[i]->key ? kvs[i]->key : "NULL", i);
+                fprintf(stderr, "DEBUG: kvs[%d] structure: kvs=%p, key=%p, value=%p\n",
+                        i, (void*)kvs[i], (void*)kvs[i]->key, (void*)kvs[i]->value);
+
+                // Check if key pointer looks valid
+                if (kvs[i]->key) {
+                    unsigned char *key_bytes = (unsigned char*)kvs[i]->key;
+                    fprintf(stderr, "DEBUG: Key bytes at %p: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                            (void*)kvs[i]->key, key_bytes[0], key_bytes[1], key_bytes[2], key_bytes[3],
+                            key_bytes[4], key_bytes[5], key_bytes[6], key_bytes[7]);
+                }
+#endif
+
                 success = success && (fprintf(file, "\"%s\": ", kvs[i]->key ? kvs[i]->key : "") > 0);
 
                 // Print value
                 if (kvs[i]->value) {
+#ifdef DEBUG
+                    fprintf(stderr, "DEBUG: About to recursively process value for key '%s'\n",
+                            kvs[i]->key ? kvs[i]->key : "NULL");
+#endif
                     success = success && write_json_to_file(file, kvs[i]->value, indent + 1);
                 } else {
                     success = success && (fprintf(file, "null") > 0);
@@ -216,31 +278,126 @@ static int write_json_to_file(FILE *file, JsonValue *json, int indent) {
  * @return 1 on success, 0 on failure
  */
 int save_config(const char *filepath, JsonValue *json) {
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: save_config called with filepath='%s', json=%p\n",
+            filepath ? filepath : "NULL", (void*)json);
+#endif
+
     if (!json) {
+#ifdef DEBUG
+        fprintf(stderr, "DEBUG: save_config - json is NULL, returning 0\n");
+#endif
         return 0;
     }
 
-    FILE *file = fopen(filepath, "w");
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: save_config - json type=%d\n", json->type);
+#endif
+
+    // Create temporary file path
+    char temp_filepath[512];
+    snprintf(temp_filepath, sizeof(temp_filepath), "/tmp/prudynt_config_temp_%d.json", getpid());
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: save_config - using temporary file: %s\n", temp_filepath);
+#endif
+
+    FILE *file = fopen(temp_filepath, "w");
     if (!file) {
-        fprintf(stderr, "Error: Failed to open file '%s' for writing: %s\n",
-                filepath, strerror(errno));
+        fprintf(stderr, "Error: Failed to open temporary file '%s' for writing: %s\n",
+                temp_filepath, strerror(errno));
         return 0;
     }
 
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: save_config - about to call write_json_to_file\n");
+#endif
     int success = write_json_to_file(file, json, 0);
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: save_config - write_json_to_file returned %d\n", success);
+#endif
 
     // Add a final newline
     if (success) {
         success = (fprintf(file, "\n") > 0);
+#ifdef DEBUG
+        fprintf(stderr, "DEBUG: save_config - added final newline, success=%d\n", success);
+#endif
     }
 
     fclose(file);
 
     if (!success) {
-        fprintf(stderr, "Error: Failed to write complete JSON to '%s'.\n", filepath);
+        fprintf(stderr, "Error: Failed to write complete JSON to temporary file '%s'.\n", temp_filepath);
+        unlink(temp_filepath); // Remove the failed temporary file
         return 0;
     }
 
+    // Atomically replace the original file with the temporary file
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: save_config - attempting to rename '%s' to '%s'\n", temp_filepath, filepath);
+#endif
+    if (rename(temp_filepath, filepath) != 0) {
+        if (errno == EXDEV) {
+            // Cross-device link error - need to copy and delete instead
+#ifdef DEBUG
+            fprintf(stderr, "DEBUG: Cross-device rename failed, trying copy method\n");
+#endif
+
+            FILE *src = fopen(temp_filepath, "r");
+            if (!src) {
+                fprintf(stderr, "Error: Failed to open temporary file for copying: %s\n", strerror(errno));
+                unlink(temp_filepath);
+                return 0;
+            }
+
+            FILE *dst = fopen(filepath, "w");
+            if (!dst) {
+                fprintf(stderr, "Error: Failed to open destination file for copying: %s\n", strerror(errno));
+                fclose(src);
+                unlink(temp_filepath);
+                return 0;
+            }
+
+            // Copy the file contents
+            char buffer[4096];
+            size_t bytes;
+            int copy_success = 1;
+            while ((bytes = fread(buffer, 1, sizeof(buffer), src)) > 0) {
+                if (fwrite(buffer, 1, bytes, dst) != bytes) {
+                    fprintf(stderr, "Error: Failed to write during copy: %s\n", strerror(errno));
+                    copy_success = 0;
+                    break;
+                }
+            }
+
+            fclose(src);
+            fclose(dst);
+
+            if (!copy_success) {
+                unlink(temp_filepath);
+                return 0;
+            }
+
+            // Remove the temporary file
+            unlink(temp_filepath);
+#ifdef DEBUG
+            fprintf(stderr, "DEBUG: save_config - successfully copied temp file to destination\n");
+#endif
+        } else {
+            fprintf(stderr, "Error: Failed to rename temporary file '%s' to '%s': %s\n",
+                    temp_filepath, filepath, strerror(errno));
+            unlink(temp_filepath); // Clean up the temporary file
+            return 0;
+        }
+    } else {
+#ifdef DEBUG
+        fprintf(stderr, "DEBUG: save_config - successfully renamed temp file to destination\n");
+#endif
+    }
+
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: save_config - completed successfully with atomic rename\n");
+#endif
     return 1;
 }
 
