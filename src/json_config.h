@@ -7,6 +7,10 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // JSON value types
 typedef enum {
     JSON_NULL,
@@ -66,5 +70,9 @@ int save_config(const char *filepath, JsonValue *json);
 JsonValue *get_nested_item(JsonValue *object, const char *key);
 int set_nested_item(JsonValue *object, const char *key, const char *value_str);
 void print_item(JsonValue *item);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* JSON_CONFIG_H */
