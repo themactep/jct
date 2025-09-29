@@ -1,2 +1,187 @@
-*.json
+# Compiled Object files
+*.o
+*.obj
+*.elf
 
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# Build directories
+build/
+dist/
+bin/
+obj/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.cmake
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+# Autotools
+/autom4te.cache
+/aclocal.m4
+/compile
+/configure
+/depcomp
+/install-sh
+/missing
+/stamp-h1
+config.h
+config.h.in
+config.log
+config.status
+Makefile.in
+.deps/
+.dirstamp
+
+# IDE files
+.vscode/
+.vs/
+*.vcxproj*
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Editor files
+*~
+*.swp
+*.swo
+.*.swp
+.*.swo
+*.tmp
+*.bak
+*.orig
+.DS_Store
+Thumbs.db
+
+# Core dumps
+core
+core.*
+vgcore.*
+
+# Valgrind
+*.memcheck
+*.helgrind
+*.drd
+*.massif
+*.cachegrind
+*.callgrind
+
+# GDB
+.gdb_history
+
+# Tags
+tags
+TAGS
+.tags
+.tags_sorted_by_file
+
+# Cscope
+cscope.files
+cscope.in.out
+cscope.out
+cscope.po.out
+
+# Project specific executables
+jct
+json_config_cli
+json_config_cli.mipsel
+
+# Test files
+test/temp_config.json
+test_*.json
+demo_*.json
+*_test
+*_test.exe
+
+# Temporary files
+*.log
+*.temp
+
+# Package files
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.deb
+*.rpm
+
+# Coverage files
+*.gcov
+*.gcda
+*.gcno
+coverage.info
+coverage/
+lcov.info
+
+# Static analysis
+cppcheck.xml
+scan-build/
+
+# Documentation build
+doc/html/
+doc/latex/
+*.pdf
+*.ps
+*.dvi
+
+# Local environment
+.env
+.env.local
+
+# Keep test data files but ignore temporary test files
+!test/test_data.json
+*.json
