@@ -66,7 +66,7 @@ static int handle_set_command(const char *config_file, const char *key, const ch
 
     if (set_nested_item(config, key, value_str)) {
         if (save_config(config_file, config)) {
-            printf("Successfully set '%s' to '%s' in '%s'.\n", key, value_str, config_file);
+            // Silent success - no output
             free_json_value(config);
             return 0;
         } else {
@@ -98,7 +98,7 @@ static int handle_create_command(const char *config_file) {
 
     // Save the config to the file
     if (save_config(config_file, config)) {
-        printf("Successfully created new config file '%s'.\n", config_file);
+        // Silent success - no output for create command
         free_json_value(config);
         return 0;
     } else {
@@ -174,7 +174,7 @@ static int handle_restore_command(const char *config_file) {
         return 4;
     }
 
-    printf("Success: Restored '%s' to original state\n", config_file);
+    // Silent success - no output for restore command
     return 0;
 }
 
