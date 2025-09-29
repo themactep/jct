@@ -10,6 +10,7 @@ it suitable for cross-compilation and embedded systems.
 - Write values to JSON configuration files using dot notation
 - Create new JSON configuration files
 - Print entire JSON configuration files
+- Restore configuration files to original state (OverlayFS support)
 - Support for nested objects and arrays
 - Support for various data types (strings, numbers, booleans, null)
 - Pretty-printing of JSON output
@@ -79,6 +80,7 @@ Commands:
   <config_file> set <key> <value>      Set a value in the config file
   <config_file> create                 Create a new empty config file
   <config_file> print                  Print the entire config file
+  <config_file> restore                Restore config file to original state (OverlayFS)
 
 Examples:
   jct config.json get server.host       Get the server host from config.json
@@ -123,6 +125,37 @@ Examples:
 ```bash
 ./jct config.json print
 ```
+
+#### Restoring a configuration file to its original state (OverlayFS)
+
+```bash
+./jct /etc/config.json restore
+```
+
+This command is designed for embedded systems using OverlayFS. It:
+1. **Requires an absolute path** (must start with '/') for the config file
+2. Validates that the original file exists in `/rom/<config_file>`
+3. Checks that a modified version exists in `/overlay/<config_file>`
+4. Removes the overlay file to expose the original ROM version
+5. Remounts the overlay filesystem to apply changes
+
+**Important:** The config file path must be absolute. Relative paths are not accepted.
+
+**Examples:**
+```bash
+./jct /etc/prudynt.json restore          # ✓ Valid - absolute path
+./jct /opt/app/config.json restore       # ✓ Valid - absolute path
+./jct prudynt.json restore               # ✗ Invalid - relative path
+./jct ./config.json restore              # ✗ Invalid - relative path
+```
+
+**Exit codes:**
+- 0: Success - file restored to original state
+- 1: Original ROM file not found
+- 2: File is already original (no overlay to remove)
+- 3: Failed to remove overlay file
+- 4: Failed to remount overlay filesystem
+- 5: Invalid arguments or non-absolute path
 
 ## Project Structure
 
