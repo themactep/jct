@@ -43,41 +43,91 @@ static char *parse_string(JsonParser *parser) {
 
     parser->pos++; // Skip opening quote
 
-    // Find the closing quote
-    size_t start = parser->pos;
+    // Find the closing quote and count actual characters needed
     int escaped = 0;
+    size_t actual_len = 0;
 
+    // First pass: find the end and count unescaped length
+    size_t temp_pos = parser->pos;
+    while (temp_pos < parser->len) {
+        char c = parser->json[temp_pos];
+
+        if (escaped) {
+            escaped = 0;
+            actual_len++; // Each escape sequence becomes one character
+        } else if (c == '\\') {
+            escaped = 1;
+        } else if (c == '"') {
+            break;
+        } else {
+            actual_len++;
+        }
+
+        temp_pos++;
+    }
+
+    if (temp_pos >= parser->len) {
+        return NULL; // Unterminated string
+    }
+
+    // Allocate memory for the unescaped string
+    char *str = (char *)malloc(actual_len + 1);
+    if (!str) {
+        return NULL;
+    }
+
+    // Second pass: copy and unescape the string
+    size_t j = 0;
+    escaped = 0;
     while (parser->pos < parser->len) {
         char c = parser->json[parser->pos];
 
         if (escaped) {
+            // Handle escape sequences
+            switch (c) {
+                case '"':
+                    str[j++] = '"';
+                    break;
+                case '\\':
+                    str[j++] = '\\';
+                    break;
+                case 'b':
+                    str[j++] = '\b';
+                    break;
+                case 'f':
+                    str[j++] = '\f';
+                    break;
+                case 'n':
+                    str[j++] = '\n';
+                    break;
+                case 'r':
+                    str[j++] = '\r';
+                    break;
+                case 't':
+                    str[j++] = '\t';
+                    break;
+                case '/':
+                    str[j++] = '/';
+                    break;
+                default:
+                    // For unrecognized escape sequences, keep the character as-is
+                    str[j++] = c;
+                    break;
+            }
             escaped = 0;
         } else if (c == '\\') {
             escaped = 1;
         } else if (c == '"') {
             break;
+        } else {
+            str[j++] = c;
         }
 
         parser->pos++;
     }
 
-    if (parser->pos >= parser->len) {
-        return NULL; // Unterminated string
-    }
-
-    size_t end = parser->pos;
     parser->pos++; // Skip closing quote
-
-    // Allocate and copy the string
-    size_t len = end - start;
-    char *str = (char *)malloc(len + 1);
-    if (!str) {
-        return NULL;
-    }
-
-    // Simple copy without handling escapes properly
-    memcpy(str, parser->json + start, len);
-    str[len] = '\0';
+    str[j] = '\0';
 
     return str;
 }
