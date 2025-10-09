@@ -9,14 +9,124 @@
 #include <errno.h>
 #include <limits.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
 
+// --- Short-name JSON file resolution helpers ---
+static int has_path_separator(const char *s) {
+    for (const char *p = s; *p; ++p) {
+        if (*p == '/' || *p == '\\') return 1;
+    }
+    return 0;
+}
+
+static int ends_with_json_ext(const char *s) {
+    size_t n = strlen(s);
+    return (n >= 5 && strcmp(s + (n - 5), ".json") == 0);
+}
+
+static int is_regular_file_following_symlink(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+    return S_ISREG(st.st_mode);
+}
+
+static int is_directory_following_symlink(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+    return S_ISDIR(st.st_mode);
+}
+
+static int path_exists(const char *path) {
+    return access(path, F_OK) == 0;
+}
+
+static int path_readable(const char *path) {
+    return access(path, R_OK) == 0;
+}
+
+// Returns 0 on success and writes resolved path into out_path.
+// On failure returns 2 (not found) or 13 (permission denied).
+// When trace is non-zero, prints candidate evaluation to stderr.
+static int resolve_config_target(const char *target, int trace, char *out_path, size_t out_sz) {
+    // Rule 1: explicit path (contains path separator or ends with .json) -> use as-is
+    if (has_path_separator(target) || ends_with_json_ext(target)) {
+        if (trace) {
+            fprintf(stderr, "[trace] explicit path used: %s\n", target);
+        }
+        // Use as-is; do not validate here
+        if (snprintf(out_path, out_sz, "%s", target) >= (int)out_sz) {
+            // Truncated, treat as not found
+            return 2;
+        }
+        return 0;
+    }
+
+    // Otherwise short name search
+    char cand1[PATH_MAX];
+    char cand2[PATH_MAX];
+    char cand3[PATH_MAX];
+    int have_cand3 = 0;
+
+    snprintf(cand1, sizeof(cand1), "./%s", target);
+    snprintf(cand2, sizeof(cand2), "./%s.json", target);
+    #ifndef _WIN32
+    snprintf(cand3, sizeof(cand3), "/etc/%s.json", target);
+    have_cand3 = 1;
+    #endif
+
+    const char *candidates[3];
+    int cand_count = 0;
+    candidates[cand_count++] = cand1;
+    candidates[cand_count++] = cand2;
+    if (have_cand3) candidates[cand_count++] = cand3;
+
+    for (int i = 0; i < cand_count; ++i) {
+        const char *c = candidates[i];
+        if (trace) fprintf(stderr, "[trace] checking %s... ", c);
+        if (!path_exists(c)) {
+            if (trace) fprintf(stderr, "not found\n");
+            continue;
+        }
+        if (is_directory_following_symlink(c)) {
+            if (trace) fprintf(stderr, "is a directory, skip\n");
+            continue;
+        }
+        if (!is_regular_file_following_symlink(c)) {
+            if (trace) fprintf(stderr, "not a regular file, skip\n");
+            continue;
+        }
+        // Exists and is a regular file -> check readability
+        if (!path_readable(c)) {
+            if (trace) fprintf(stderr, "exists but not readable -> permission denied\n");
+            // Do not fall back to later candidates
+            fprintf(stderr, "jct: permission denied: %s\n", c);
+            return 13;
+        }
+        // Select this candidate
+        if (snprintf(out_path, out_sz, "%s", c) >= (int)out_sz) {
+            // Truncation shouldn't happen with PATH_MAX, but handle anyway
+            return 2;
+        }
+        if (trace) fprintf(stderr, "selected\n[trace] resolved to: %s\n", out_path);
+        return 0;
+    }
+
+    // None found
+    if (trace) fprintf(stderr, "[trace] no matching file found for '%s'\n", target);
+    // Build error message listing tried candidates
+    fprintf(stderr, "jct: no JSON file found for '%s'; tried: %s, %s", target, cand1, cand2);
+    if (have_cand3) fprintf(stderr, ", %s", cand3);
+    fprintf(stderr, "\n");
+    return 2;
+}
+
 // Function to print usage information
 static void print_usage(void) {
-    printf("Usage: jct <config_file> <command> [options]\n\n");
+    printf("Usage: jct [--trace-resolve] <config_file> <command> [options]\n\n");
     printf("Commands:\n");
     printf("  <config_file> get <key>              Get a value from the config file\n");
     printf("  <config_file> set <key> <value>      Set a value in the config file\n");
@@ -24,12 +134,21 @@ static void print_usage(void) {
     printf("  <config_file> print                  Print the entire config file\n");
     printf("  <config_file> restore                Restore config file to original state (OverlayFS)\n");
     printf("\n");
+    printf("Options:\n");
+    printf("  --trace-resolve                      Trace short-name resolution steps\n");
+    printf("\n");
+    printf("Short-name resolution (when <config_file> has no '/' and no '.json'):\n");
+    printf("  Tries: ./<name>, ./<name>.json, /etc/<name>.json (POSIX).\n");
+    printf("  If none found: exit 2 with list of tried paths. If unreadable: exit 13.\n");
+    printf("Creation rules:\n");
+    printf("  'create' requires an explicit path. 'set' may create only with an explicit path.\n");
+    printf("\n");
     printf("Examples:\n");
-    printf("  jct config.json get server.host       Get the server host from config.json\n");
-    printf("  jct config.json set server.port 8080  Set the server port to 8080 in config.json\n");
-    printf("  jct new_config.json create            Create a new empty config file\n");
+    printf("  jct prudynt get server.port           Resolve short name 'prudynt' and read\n");
+    printf("  jct prudynt set app.name 'My App'     Resolve and update existing; to create, use explicit path\n");
+    printf("  jct ./prudynt set app.name 'My App'   Explicit path; allowed to create\n");
     printf("  jct config.json print                 Print the entire config file\n");
-    printf("  jct /etc/config.json restore          Restore /etc/config.json to original state (absolute path required)\n");
+    printf("  jct /etc/config.json restore          Restore /etc/config.json (absolute path required)\n");
 }
 
 // Function to handle the 'get' command
@@ -179,36 +298,83 @@ static int handle_restore_command(const char *config_file) {
 }
 
 int main(int argc, char *argv[]) {
-    // Check if enough arguments are provided
-    if (argc < 3) {
+    // Gather non-flag arguments and recognize --trace-resolve
+    int trace_resolve = 0;
+    int idxs[argc];
+    int nidx = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--trace-resolve") == 0) {
+            trace_resolve = 1;
+            continue;
+        }
+        idxs[nidx++] = i;
+    }
+
+    if (nidx < 2) {
         print_usage();
         return 1;
     }
 
-    const char *config_file = argv[1];
-    const char *command = argv[2];
+    const char *config_target = argv[idxs[0]];
+    const char *command = argv[idxs[1]];
 
-    // Handle the different commands
+    char resolved_path[PATH_MAX];
+    const char *cfg_for_handlers = config_target;
+
+    // Decide path handling per command
+    if (strcmp(command, "get") == 0 || strcmp(command, "print") == 0 || strcmp(command, "restore") == 0) {
+        // These require an existing readable file; apply short-name resolution
+        int rc = resolve_config_target(config_target, trace_resolve, resolved_path, sizeof(resolved_path));
+        if (rc != 0) {
+            return rc; // 2 not found (already printed), or 13 permission denied
+        }
+        cfg_for_handlers = resolved_path;
+    } else if (strcmp(command, "set") == 0) {
+        // set: short-name must resolve to existing file; explicit path may create
+        if (!(has_path_separator(config_target) || ends_with_json_ext(config_target))) {
+            // short name
+            int rc = resolve_config_target(config_target, trace_resolve, resolved_path, sizeof(resolved_path));
+            if (rc != 0) {
+                if (rc == 2) {
+                    // Add guidance for creating via explicit path
+                    fprintf(stderr, "jct: to create a new file, supply an explicit path (e.g., ./%s.json)\n", config_target);
+                }
+                return rc; // 2/13 exit
+            }
+            cfg_for_handlers = resolved_path; // resolved existing file
+        }
+        // explicit path: pass as-is (allows creation)
+        cfg_for_handlers = config_target;
+    } else if (strcmp(command, "create") == 0) {
+        // create always requires an explicit path
+        if (!(has_path_separator(config_target) || ends_with_json_ext(config_target))) {
+            fprintf(stderr, "jct: 'create' requires an explicit path; to create a new file, supply an explicit path (e.g., ./%s.json)\n", config_target);
+            return 2;
+        }
+        cfg_for_handlers = config_target; // explicit path
+    }
+
+    // Dispatch
     if (strcmp(command, "get") == 0) {
-        if (argc < 4) {
+        if (nidx < 3) {
             fprintf(stderr, "Error: 'get' command requires a key.\n");
             print_usage();
             return 1;
         }
-        return handle_get_command(config_file, argv[3]);
+        return handle_get_command(cfg_for_handlers, argv[idxs[2]]);
     } else if (strcmp(command, "set") == 0) {
-        if (argc < 5) {
+        if (nidx < 4) {
             fprintf(stderr, "Error: 'set' command requires a key and a value.\n");
             print_usage();
             return 1;
         }
-        return handle_set_command(config_file, argv[3], argv[4]);
+        return handle_set_command(cfg_for_handlers, argv[idxs[2]], argv[idxs[3]]);
     } else if (strcmp(command, "create") == 0) {
-        return handle_create_command(config_file);
+        return handle_create_command(cfg_for_handlers);
     } else if (strcmp(command, "print") == 0) {
-        return handle_print_command(config_file);
+        return handle_print_command(cfg_for_handlers);
     } else if (strcmp(command, "restore") == 0) {
-        return handle_restore_command(config_file);
+        return handle_restore_command(cfg_for_handlers);
     } else if (strcmp(command, "--help") == 0 || strcmp(command, "-h") == 0) {
         print_usage();
         return 0;

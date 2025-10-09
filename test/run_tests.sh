@@ -36,9 +36,9 @@ run_test() {
     local test_name="$1"
     local expected="$2"
     local actual="$3"
-    
+
     TESTS_RUN=$((TESTS_RUN + 1))
-    
+
     if [ "$actual" = "$expected" ]; then
         echo -e "${GREEN}✓${NC} $test_name"
         TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -55,9 +55,9 @@ test_command() {
     local test_name="$1"
     local command="$2"
     local should_succeed="$3"
-    
+
     TESTS_RUN=$((TESTS_RUN + 1))
-    
+
     if eval "$command" >/dev/null 2>&1; then
         if [ "$should_succeed" = "true" ]; then
             echo -e "${GREEN}✓${NC} $test_name (command succeeded as expected)"
@@ -76,6 +76,50 @@ test_command() {
         fi
     fi
 }
+# Helper: test exit code
+expect_exit_code() {
+    local test_name="$1"
+    local command="$2"
+    local expected_code="$3"
+    TESTS_RUN=$((TESTS_RUN + 1))
+    set +e
+    eval "$command" >/dev/null 2>&1
+    local code=$?
+    set -e
+    if [ "$code" = "$expected_code" ]; then
+        echo -e "${GREEN}OK${NC} $test_name (exit $code)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "${RED}FAIL${NC} $test_name (expected exit $expected_code, got $code)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+# Helper: capture stderr and check it contains substring
+expect_stderr_contains() {
+    local test_name="$1"
+    local command="$2"
+    local substring="$3"
+    TESTS_RUN=$((TESTS_RUN + 1))
+    set +e
+    local tmpfile
+    tmpfile=$(mktemp)
+    eval "$command" 1>/dev/null 2>"$tmpfile"
+    local code=$?
+    set -e
+    if grep -Fq "$substring" "$tmpfile"; then
+        echo -e "${GREEN}OK${NC} $test_name (stderr contains expected text)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "${RED}FAIL${NC} $test_name (stderr did not contain expected text)"
+        echo -e "  Expected substring: ${YELLOW}$substring${NC}"
+        echo -e "  Actual stderr:";
+        sed 's/^/    /' "$tmpfile"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    rm -f "$tmpfile"
+}
+
 
 echo -e "${BLUE}=== JCT Comprehensive Test Suite ===${NC}"
 echo
@@ -153,6 +197,7 @@ test_command "Set empty string" "./jct $TEMP_CONFIG set test.empty ''" "true"
 if [ -f "$TEMP_CONFIG" ]; then
     run_test "Get set string" "hello world" "$(./jct $TEMP_CONFIG get test.string)"
     run_test "Get set number" "42" "$(./jct $TEMP_CONFIG get test.number)"
+
     run_test "Get set boolean" "true" "$(./jct $TEMP_CONFIG get test.boolean)"
     run_test "Get set null" "null" "$(./jct $TEMP_CONFIG get test.null)"
     run_test "Get set empty string" "" "$(./jct $TEMP_CONFIG get test.empty)"
@@ -190,6 +235,63 @@ echo -e "${BLUE}Testing special value parsing...${NC}"
 test_command "Set version string" "./jct $TEMP_CONFIG set app.version '1.2.3-beta'" "true"
 test_command "Set numeric string" "./jct $TEMP_CONFIG set app.build '20231201'" "true"
 test_command "Set decimal number" "./jct $TEMP_CONFIG set app.pi 3.14159" "true"
+# Test 15: Short-name resolution
+echo -e "${BLUE}Testing short-name resolution...${NC}"
+# Ensure clean slate
+rm -f prudynt prudynt.json
+
+# Candidate (a): ./prudynt (no extension)
+echo '{"x":1}' > prudynt
+run_test "Short-name selects ./prudynt" "1" "$(./jct prudynt get x)"
+
+# Precedence: ./prudynt over ./prudynt.json
+echo '{"x":2}' > prudynt.json
+run_test "Precedence prefers ./prudynt over ./prudynt.json" "1" "$(./jct prudynt get x)"
+
+# Candidate (b): ./prudynt.json when ./prudynt absent
+rm -f prudynt
+run_test "Falls back to ./prudynt.json when ./prudynt missing" "2" "$(./jct prudynt get x)"
+
+# Permission denied: unreadable ./prudynt halts and does not try later candidates
+echo '{"x":3}' > prudynt
+chmod 000 prudynt
+expect_exit_code "Unreadable candidate yields exit 13" "./jct prudynt get x" 13
+chmod 644 prudynt
+
+# Not found error lists tried paths
+rm -f prudynt prudynt.json
+expect_exit_code "Not found yields exit 2" "./jct prudynt get x" 2
+# Expect error message to include tried paths
+expect_stderr_contains "Not found error message lists candidates" "./jct prudynt get x" "jct: no JSON file found for 'prudynt'; tried: ./prudynt, ./prudynt.json"
+
+# Trace flag emits resolution steps
+echo '{"x":1}' > prudynt
+expect_stderr_contains "--trace-resolve emits trace" "./jct --trace-resolve prudynt get x" "[trace]"
+rm -f prudynt prudynt.json
+# Test 16: set/create behavior with short names vs explicit paths
+echo -e "${BLUE}Testing set/create behavior with short names vs explicit paths...${NC}"
+rm -f prudynt prudynt.json
+
+# set with short name must not create; should return 2 with guidance
+expect_exit_code "Short-name set does not create; exit 2" "./jct prudynt set app.name 'My App'" 2
+expect_stderr_contains "Set short-name guidance present" "./jct prudynt set app.name 'My App'" "to create a new file, supply an explicit path"
+# ensure not created
+test_command "No files created for short-name set" "test ! -f prudynt -a ! -f prudynt.json" "true"
+
+# set with explicit path may create
+expect_exit_code "Explicit path set can create new file" "./jct ./prudynt set app.name 'My App'" 0
+run_test "Explicit-created file has value" "My App" "$(./jct ./prudynt get app.name)"
+
+# create requires explicit path; short name should fail with 2 and guidance
+rm -f prudynt prudynt.json
+expect_exit_code "Create with short name fails with 2" "./jct prudynt create" 2
+expect_stderr_contains "Create short-name guidance present" "./jct prudynt create" "requires an explicit path"
+# create with explicit path succeeds
+expect_exit_code "Create with explicit path succeeds" "./jct prudynt.json create" 0
+# cleanup
+rm -f prudynt prudynt.json
+
+
 
 if [ -f "$TEMP_CONFIG" ]; then
     run_test "Version remains string" "1.2.3-beta" "$(./jct $TEMP_CONFIG get app.version)"
