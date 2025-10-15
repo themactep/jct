@@ -183,6 +183,10 @@ test_command "Print entire file" "./jct $TEST_DATA print" "true"
 test_command "Print nested object" "./jct $TEST_DATA get config_examples.server" "true"
 test_command "Print array" "./jct $TEST_DATA get arrays.strings" "true"
 
+
+# Regression: ensure printing telegrambot.json yields valid JSON
+expect_exit_code "telegrambot.json prints valid JSON" "./jct test/telegrambot.json print | python3 -c 'import sys,json; json.load(sys.stdin)'" "0"
+
 # Test 10: Create and set operations
 echo -e "${BLUE}Testing create and set operations...${NC}"
 rm -f "$TEMP_CONFIG"

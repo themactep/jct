@@ -626,6 +626,24 @@ static void print_indent(int indent) {
     }
 }
 
+// Helper: print a JSON-escaped string (without surrounding quotes)
+static void print_escaped_string(const char *s) {
+    if (!s) return;
+    for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
+        switch (*p) {
+            case '"': putchar('\\'); putchar('"'); break;
+            case '\\': putchar('\\'); putchar('\\'); break;
+            case '\b': putchar('\\'); putchar('b'); break;
+            case '\f': putchar('\\'); putchar('f'); break;
+            case '\n': putchar('\\'); putchar('n'); break;
+            case '\r': putchar('\\'); putchar('r'); break;
+            case '\t': putchar('\\'); putchar('t'); break;
+            default: putchar(*p); break;
+        }
+    }
+}
+
+
 /**
  * Recursively prints a JSON value with proper indentation
  */
@@ -652,7 +670,9 @@ static void print_json_value(JsonValue *item, int indent) {
             break;
         case JSON_STRING:
             if (item->value.string) {
-                printf("\"%s\"", item->value.string);
+                putchar('"');
+                print_escaped_string(item->value.string);
+                putchar('"');
             } else {
                 printf("\"\"");
             }
@@ -699,7 +719,12 @@ static void print_json_value(JsonValue *item, int indent) {
                 }
 
                 print_indent(indent + 1);
-                printf("\"%s\": ", kvs[i]->key ? kvs[i]->key : "");
+                putchar('"');
+                if (kvs[i]->key) {
+                    print_escaped_string(kvs[i]->key);
+                }
+                putchar('"');
+                printf(": ");
 
                 if (kvs[i]->value) {
                     print_json_value(kvs[i]->value, indent + 1);
