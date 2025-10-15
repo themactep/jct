@@ -76,6 +76,19 @@ test_command() {
         fi
     fi
 }
+# Normalize JSON helper
+norm_json() {
+  python3 - <<'PY' 2>/dev/null || cat
+import sys, json
+s=sys.stdin.read()
+try:
+    obj=json.loads(s)
+    print(json.dumps(obj, separators=(",", ":")))
+except Exception:
+    print(s)
+PY
+}
+
 # Helper: test exit code
 expect_exit_code() {
     local test_name="$1"
@@ -281,6 +294,52 @@ expect_exit_code "Short-name set does not create; exit 2" "./jct prudynt set app
 expect_stderr_contains "Set short-name guidance present" "./jct prudynt set app.name 'My App'" "to create a new file, supply an explicit path"
 # ensure not created
 test_command "No files created for short-name set" "test ! -f prudynt -a ! -f prudynt.json" "true"
+# Test 17: JSONPath command
+echo -e "${BLUE}Testing jsonpath command...${NC}"
+# $..author over books
+ACTUAL=$(./jct test/books.json path '$..author' --mode values | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='["Nigel Rees","Evelyn Waugh","Herman Melville","J. R. R. Tolkien"]'
+run_test "jsonpath authors values" "$EXPECTED" "$ACTUAL"
+
+# Filtered titles under price < 10
+ACTUAL=$(./jct test/books.json path '$.store.book[?(@.price < 10)].title' --mode values | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='["Sayings of the Century","Moby Dick"]'
+run_test "jsonpath filtered titles" "$EXPECTED" "$ACTUAL"
+
+# Slice first two numbers
+ACTUAL=$(./jct test/test_data.json path '$.arrays.numbers[0:2]' --mode values | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='[1,2]'
+run_test "jsonpath slice first two" "$EXPECTED" "$ACTUAL"
+
+# Union of indexes
+ACTUAL=$(./jct test/test_data.json path '$.arrays.strings[1,2]' --mode values | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='["banana","cherry"]'
+run_test "jsonpath union indices" "$EXPECTED" "$ACTUAL"
+
+# Bracket string properties
+ACTUAL=$(./jct test/test_data.json path '$.config_examples.server.host' --mode values | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='["localhost"]'
+run_test "jsonpath bracket strings" "$EXPECTED" "$ACTUAL"
+
+# Recursive wildcard
+ACTUAL=$(./jct test/test_data.json path '$..name' --mode values | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='["myapp_production","item1","item2"]'
+run_test "jsonpath recursive names" "$EXPECTED" "$ACTUAL"
+
+# Paths mode
+ACTUAL=$(./jct test/test_data.json path '$.arrays.strings[*]' --mode paths | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='["$.arrays.strings[0]","$.arrays.strings[1]","$.arrays.strings[2]"]'
+run_test "jsonpath paths mode" "$EXPECTED" "$ACTUAL"
+
+# Pairs mode with limit
+ACTUAL=$(./jct test/books.json path '$..author' --mode pairs --limit 1 | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
+EXPECTED='[{"path":"$.store.book[0].author","value":"Nigel Rees"}]'
+# Unwrap single value
+ACTUAL=$(./jct test/test_data.json path '$.booleans.true_value' --unwrap-single)
+EXPECTED='true'
+run_test "jsonpath unwrap single" "$EXPECTED" "$ACTUAL"
+
+
 
 # set with explicit path may create
 expect_exit_code "Explicit path set can create new file" "./jct ./prudynt set app.name 'My App'" 0

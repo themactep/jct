@@ -155,6 +155,25 @@ Tip:
 ./jct config.json set app.version 1.0
 ```
 
+#### JSONPath queries (new)
+
+Query JSON data using Goessner JSONPath.
+
+Examples:
+
+- jct books.json path "$..author" --mode values
+- jct books.json path "$.store.book[?(@.price < 10)].title"
+- jct books.json path "$.store.book[0:3]" --mode pairs
+
+Options:
+
+- --mode values|paths|pairs (default: values)
+- --limit N to stop after N matches
+- --strict causes parse/eval errors to exit nonzero (2 parse, 3 eval); default lenient emits [] and warns to stderr
+- --pretty pretty-prints JSON output
+- --unwrap-single when mode=values, emit the lone value instead of [value]
+
+
 #### Getting values from a configuration file
 
 ```bash

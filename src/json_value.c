@@ -15,10 +15,10 @@ JsonValue *create_json_value(JsonType type) {
     if (!value) {
         return NULL;
     }
-    
+
     memset(value, 0, sizeof(JsonValue));
     value->type = type;
-    
+
     return value;
 }
 
@@ -29,7 +29,7 @@ void free_json_value(JsonValue *value) {
     if (!value) {
         return;
     }
-    
+
     switch (value->type) {
         case JSON_STRING:
             free(value->value.string);
@@ -59,9 +59,59 @@ void free_json_value(JsonValue *value) {
             // Nothing to free for other types
             break;
     }
-    
+
     free(value);
 }
+
+/**
+ * Deeply clones a JSON value
+ */
+JsonValue *clone_json_value(const JsonValue *value) {
+    if (!value) return NULL;
+    JsonValue *out = create_json_value(value->type);
+    if (!out) return NULL;
+    switch (value->type) {
+        case JSON_NULL:
+            break;
+        case JSON_BOOL:
+            out->value.boolean = value->value.boolean;
+            break;
+        case JSON_NUMBER:
+            out->value.number = value->value.number;
+            break;
+        case JSON_STRING:
+            out->value.string = value->value.string ? strdup(value->value.string) : NULL;
+            break;
+        case JSON_ARRAY: {
+            JsonArrayItem *it = value->value.array_head;
+            while (it) {
+                JsonValue *child = clone_json_value(it->value);
+                if (!child || !add_to_array(out, child)) {
+                    if (child) free_json_value(child);
+                    free_json_value(out);
+                    return NULL;
+                }
+                it = it->next;
+            }
+            break;
+        }
+        case JSON_OBJECT: {
+            JsonKeyValue *kv = value->value.object_head;
+            while (kv) {
+                JsonValue *child = clone_json_value(kv->value);
+                if (!child || !add_to_object(out, kv->key ? kv->key : "", child)) {
+                    if (child) free_json_value(child);
+                    free_json_value(out);
+                    return NULL;
+                }
+                kv = kv->next;
+            }
+            break;
+        }
+    }
+    return out;
+}
+
 
 /**
  * Adds a key-value pair to a JSON object
@@ -70,7 +120,7 @@ int add_to_object(JsonValue *object, const char *key, JsonValue *value) {
     if (!object || !key || !value || object->type != JSON_OBJECT) {
         return 0;
     }
-    
+
     // Check if key already exists, if so, replace the value
     JsonKeyValue *kv = object->value.object_head;
     while (kv) {
@@ -81,23 +131,23 @@ int add_to_object(JsonValue *object, const char *key, JsonValue *value) {
         }
         kv = kv->next;
     }
-    
+
     // Create new key-value pair
     JsonKeyValue *new_kv = (JsonKeyValue *)malloc(sizeof(JsonKeyValue));
     if (!new_kv) {
         return 0;
     }
-    
+
     new_kv->key = strdup(key);
     if (!new_kv->key) {
         free(new_kv);
         return 0;
     }
-    
+
     new_kv->value = value;
     new_kv->next = object->value.object_head;
     object->value.object_head = new_kv;
-    
+
     return 1;
 }
 
@@ -108,14 +158,14 @@ int add_to_array(JsonValue *array, JsonValue *value) {
     if (!array || !value || array->type != JSON_ARRAY) {
         return 0;
     }
-    
+
     JsonArrayItem *new_item = (JsonArrayItem *)malloc(sizeof(JsonArrayItem));
     if (!new_item) {
         return 0;
     }
-    
+
     new_item->value = value;
-    
+
     // Add to the end of the array
     if (!array->value.array_head) {
         new_item->next = NULL;
@@ -128,7 +178,7 @@ int add_to_array(JsonValue *array, JsonValue *value) {
         new_item->next = NULL;
         item->next = new_item;
     }
-    
+
     return 1;
 }
 
@@ -139,15 +189,15 @@ JsonValue *get_array_item(JsonValue *array, int index) {
     if (!array || array->type != JSON_ARRAY || index < 0) {
         return NULL;
     }
-    
+
     JsonArrayItem *item = array->value.array_head;
     int i = 0;
-    
+
     while (item && i < index) {
         item = item->next;
         i++;
     }
-    
+
     return item ? item->value : NULL;
 }
 
@@ -158,15 +208,15 @@ int get_array_size(JsonValue *array) {
     if (!array || array->type != JSON_ARRAY) {
         return 0;
     }
-    
+
     int size = 0;
     JsonArrayItem *item = array->value.array_head;
-    
+
     while (item) {
         size++;
         item = item->next;
     }
-    
+
     return size;
 }
 
@@ -177,15 +227,15 @@ JsonValue *get_object_item(JsonValue *object, const char *key) {
     if (!object || !key || object->type != JSON_OBJECT) {
         return NULL;
     }
-    
+
     JsonKeyValue *kv = object->value.object_head;
-    
+
     while (kv) {
         if (strcmp(kv->key, key) == 0) {
             return kv->value;
         }
         kv = kv->next;
     }
-    
+
     return NULL;
 }

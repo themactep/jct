@@ -108,12 +108,15 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
             break;
         case JSON_NUMBER: {
             char buffer[128]; // Larger buffer for safety
-            int len = snprintf(buffer, sizeof(buffer), "%g", json->value.number);
-            if (len < 0 || len >= (int)sizeof(buffer)) {
-                // Handle error or truncation
-                size = 16; // Use a safe default size
+            double d = json->value.number;
+            // If value is an exact integer within 64-bit range, print as integer (no scientific notation)
+            long long ll = (long long)d;
+            if ((double)ll == d) {
+                int len = snprintf(buffer, sizeof(buffer), "%lld", ll);
+                if (len < 0 || len >= (int)sizeof(buffer)) size = 32; else size = len;
             } else {
-                size = len;
+                int len = snprintf(buffer, sizeof(buffer), "%g", d);
+                if (len < 0 || len >= (int)sizeof(buffer)) size = 16; else size = len;
             }
             break;
         }
@@ -289,10 +292,14 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty, i
             }
             break;
         case JSON_NUMBER: {
-            // Use snprintf for safety
-            pos = snprintf(buffer, 128, "%g", json->value.number);
+            double d = json->value.number;
+            long long ll = (long long)d;
+            if ((double)ll == d) {
+                pos = snprintf(buffer, 128, "%lld", ll);
+            } else {
+                pos = snprintf(buffer, 128, "%g", d);
+            }
             if (pos < 0 || pos >= 128) {
-                // Handle error or truncation
                 strncpy(buffer, "0", 2);
                 pos = 1;
             }

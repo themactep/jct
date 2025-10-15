@@ -18,7 +18,7 @@ LDFLAGS_RELEASE = $(LDFLAGS_BASE) -Wl,--gc-sections
 
 # Directories and files
 SRC_DIR = src
-LIB_SOURCES = $(SRC_DIR)/json_value.c $(SRC_DIR)/json_parse.c $(SRC_DIR)/json_serialize.c $(SRC_DIR)/json_config.c
+LIB_SOURCES = $(SRC_DIR)/json_value.c $(SRC_DIR)/json_parse.c $(SRC_DIR)/json_serialize.c $(SRC_DIR)/json_config.c $(SRC_DIR)/jsonpath.c
 CLI_SOURCES = $(SRC_DIR)/json_config_cli.c
 LIB_OBJECTS = $(LIB_SOURCES:.c=.o)
 CLI_OBJECTS = $(CLI_SOURCES:.c=.o)
@@ -129,4 +129,7 @@ $(SRC_DIR)/json_value.o: $(SRC_DIR)/json_value.c $(SRC_DIR)/json_config.h
 $(SRC_DIR)/json_parse.o: $(SRC_DIR)/json_parse.c $(SRC_DIR)/json_config.h
 $(SRC_DIR)/json_serialize.o: $(SRC_DIR)/json_serialize.c $(SRC_DIR)/json_config.h
 $(SRC_DIR)/json_config.o: $(SRC_DIR)/json_config.c $(SRC_DIR)/json_config.h
+
+$(SRC_DIR)/jsonpath.o: $(SRC_DIR)/jsonpath.c $(SRC_DIR)/jsonpath.h $(SRC_DIR)/json_config.h
+
 $(SRC_DIR)/json_config_cli.o: $(SRC_DIR)/json_config_cli.c $(SRC_DIR)/json_config.h

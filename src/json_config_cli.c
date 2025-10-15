@@ -3,6 +3,7 @@
  */
 
 #include "json_config.h"
+#include "jsonpath.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,6 +125,87 @@ static int resolve_config_target(const char *target, int trace, char *out_path, 
     return 2;
 }
 
+// --- JSONPath (path) command handler ---
+static int handle_path_command(const char *config_file, int argc, char *argv[], int start_index) {
+    // Syntax: jct <file> path <expression> [--mode values|paths|pairs] [--limit N] [--strict] [--pretty] [--unwrap-single]
+    const char *expr = NULL; int pretty = 0; int unwrap_single = 0; JsonPathOptions opt = { .mode = JSONPATH_MODE_VALUES, .limit = 0, .strict = 0 };
+    for (int i = start_index; i < argc; ++i) {
+        const char *a = argv[i];
+        if (!expr && a[0] != '-') { expr = a; continue; }
+        if (strcmp(a, "--mode") == 0 && i + 1 < argc) {
+            const char *m = argv[++i];
+            if (strcmp(m, "values")==0) opt.mode = JSONPATH_MODE_VALUES;
+            else if (strcmp(m, "paths")==0) opt.mode = JSONPATH_MODE_PATHS;
+            else if (strcmp(m, "pairs")==0) opt.mode = JSONPATH_MODE_PAIRS;
+            else { fprintf(stderr, "Error: invalid --mode '%s'\n", m); return 2; }
+        } else if (strcmp(a, "--limit") == 0 && i + 1 < argc) {
+            opt.limit = atoi(argv[++i]); if (opt.limit < 0) opt.limit = 0;
+        } else if (strcmp(a, "--strict") == 0) {
+            opt.strict = 1;
+        } else if (strcmp(a, "--pretty") == 0) {
+            pretty = 1;
+        } else if (strcmp(a, "--unwrap-single") == 0) {
+            unwrap_single = 1;
+        } else if (strcmp(a, "--help") == 0 || strcmp(a, "-h") == 0) {
+            printf("Usage: jct <file.json> path <expression> [--mode values|paths|pairs] [--limit N] [--strict] [--pretty] [--unwrap-single]\n");
+            return 0;
+        } else if (!expr) {
+            expr = a;
+        } else {
+            fprintf(stderr, "Error: unknown argument '%s'\n", a);
+            return 2;
+        }
+    }
+    if (!expr) { fprintf(stderr, "Error: path requires an expression.\n"); return 2; }
+
+    JsonValue *doc = parse_json_file(config_file);
+    if (!doc) { return opt.strict ? 3 : 0; }
+
+    JsonPathResults *res = evaluate_jsonpath(doc, expr, &opt);
+    if (!res) {
+        free_json_value(doc);
+        return opt.strict ? 2 : 0;
+    }
+
+    // Unwrap single for values mode if requested
+    if (opt.mode == JSONPATH_MODE_VALUES && unwrap_single && res->count == 1) {
+        char *scalar = json_to_string(res->values[0], pretty);
+        if (!scalar) scalar = strdup("null");
+        printf("%s\n", scalar);
+        free(scalar);
+        free_jsonpath_results(res);
+        free_json_value(doc);
+        return 0;
+    }
+
+    JsonValue *out_json = create_json_value(JSON_ARRAY);
+    if (!out_json) { free_jsonpath_results(res); free_json_value(doc); return opt.strict ? 3 : 0; }
+
+    if (res->mode == JSONPATH_MODE_VALUES) {
+        for (int i = 0; i < res->count; ++i) { add_to_array(out_json, res->values[i]); res->values[i] = NULL; }
+    } else if (res->mode == JSONPATH_MODE_PATHS) {
+        for (int i = 0; i < res->count; ++i) { JsonValue *s = create_json_value(JSON_STRING); s->value.string = strdup(res->paths[i] ? res->paths[i] : "$"); add_to_array(out_json, s); }
+    } else { // pairs
+        for (int i = 0; i < res->count; ++i) {
+            JsonValue *obj = create_json_value(JSON_OBJECT);
+            // Put 'value' then 'path' so printing order matches expected
+            add_to_object(obj, "value", res->values[i]); res->values[i] = NULL;
+            JsonValue *sp = create_json_value(JSON_STRING); sp->value.string = strdup(res->paths[i] ? res->paths[i] : "$"); add_to_object(obj, "path", sp);
+            add_to_array(out_json, obj);
+        }
+    }
+
+    char *out_str = json_to_string(out_json, pretty);
+    if (!out_str) out_str = strdup("[]");
+    printf("%s\n", out_str);
+    free(out_str);
+    free_json_value(out_json);
+    free_jsonpath_results(res);
+    free_json_value(doc);
+    return 0;
+}
+
+
 // Function to print usage information
 static void print_usage(void) {
     printf("Usage: jct [--trace-resolve] <config_file> <command> [options]\n\n");
@@ -133,9 +215,11 @@ static void print_usage(void) {
     printf("  <config_file> create                 Create a new empty config file\n");
     printf("  <config_file> print                  Print the entire config file\n");
     printf("  <config_file> restore                Restore config file to original state (OverlayFS)\n");
+    printf("  <config_file> path <expression>      Query JSON using JSONPath (Goessner)\n");
     printf("\n");
     printf("Options:\n");
-    printf("  --trace-resolve                      Trace short-name resolution steps\n");
+    printf("  --trace-resolve                      Trace short-name resolution steps (get/set/print/restore)\n");
+    printf("  path options: --mode values|paths|pairs [--limit N] [--strict] [--pretty] [--unwrap-single]\n");
     printf("\n");
     printf("Short-name resolution (when <config_file> has no '/' and no '.json'):\n");
     printf("  Tries: ./<name>, ./<name>.json, /etc/<name>.json (POSIX).\n");
@@ -149,6 +233,7 @@ static void print_usage(void) {
     printf("  jct ./prudynt set app.name 'My App'   Explicit path; allowed to create\n");
     printf("  jct config.json print                 Print the entire config file\n");
     printf("  jct /etc/config.json restore          Restore /etc/config.json (absolute path required)\n");
+    printf("  jct books.json path '$..author' --mode values\n");
 }
 
 // Function to handle the 'get' command
@@ -310,6 +395,7 @@ int main(int argc, char *argv[]) {
         idxs[nidx++] = i;
     }
 
+
     if (nidx < 2) {
         print_usage();
         return 1;
@@ -322,7 +408,7 @@ int main(int argc, char *argv[]) {
     const char *cfg_for_handlers = config_target;
 
     // Decide path handling per command
-    if (strcmp(command, "get") == 0 || strcmp(command, "print") == 0 || strcmp(command, "restore") == 0) {
+    if (strcmp(command, "get") == 0 || strcmp(command, "print") == 0 || strcmp(command, "restore") == 0 || strcmp(command, "path") == 0) {
         // These require an existing readable file; apply short-name resolution
         int rc = resolve_config_target(config_target, trace_resolve, resolved_path, sizeof(resolved_path));
         if (rc != 0) {
@@ -375,6 +461,13 @@ int main(int argc, char *argv[]) {
         return handle_print_command(cfg_for_handlers);
     } else if (strcmp(command, "restore") == 0) {
         return handle_restore_command(cfg_for_handlers);
+    } else if (strcmp(command, "path") == 0) {
+        if (nidx < 3) {
+            fprintf(stderr, "Error: 'path' command requires an expression.\n");
+            print_usage();
+            return 1;
+        }
+        return handle_path_command(cfg_for_handlers, argc, argv, idxs[2]);
     } else if (strcmp(command, "--help") == 0 || strcmp(command, "-h") == 0) {
         print_usage();
         return 0;

@@ -60,9 +60,15 @@ JsonValue *get_object_item(JsonValue *object, const char *key);
 
 // JSON parsing functions
 JsonValue *parse_json_file(const char *filepath);
+// Parse from a JSON string buffer
+JsonValue *parse_json_string(const char *json_str);
+
 
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
+
+// Deep clone a JSON value (recursively)
+JsonValue *clone_json_value(const JsonValue *value);
 
 // Config manipulation functions
 JsonValue *load_config(const char *filepath);
