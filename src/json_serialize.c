@@ -9,6 +9,24 @@
 #include <ctype.h>
 #include <limits.h>
 
+#include <float.h>
+
+static int is_exact_int64_double(double d, long long *out_ll) {
+    // NaN
+    if (!(d == d)) return 0;
+    // +/- infinity
+    if (d > DBL_MAX || d < -DBL_MAX) return 0;
+    // Within int64 range
+    if (d < (double)LLONG_MIN || d > (double)LLONG_MAX) return 0;
+    // Within precise integer range of IEEE-754 double (2^53-1)
+    double ad = d < 0 ? -d : d;
+    if (ad > 9007199254740991.0) return 0;
+    long long ll = (long long)d;
+    if ((double)ll != d) return 0;
+    if (out_ll) *out_ll = ll;
+    return 1;
+}
+
 // Function prototypes for internal use
 static char *escape_string(const char *str);
 static int calculate_json_size(JsonValue *json, int pretty, int level);
@@ -107,11 +125,10 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
             size = json->value.boolean ? 4 : 5; // "true" or "false"
             break;
         case JSON_NUMBER: {
-            char buffer[128]; // Larger buffer for safety
+            char buffer[128];
             double d = json->value.number;
-            // If value is an exact integer within 64-bit range, print as integer (no scientific notation)
-            long long ll = (long long)d;
-            if ((double)ll == d) {
+            long long ll;
+            if (is_exact_int64_double(d, &ll)) {
                 int len = snprintf(buffer, sizeof(buffer), "%lld", ll);
                 if (len < 0 || len >= (int)sizeof(buffer)) size = 32; else size = len;
             } else {
@@ -293,8 +310,8 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty, i
             break;
         case JSON_NUMBER: {
             double d = json->value.number;
-            long long ll = (long long)d;
-            if ((double)ll == d) {
+            long long ll;
+            if (is_exact_int64_double(d, &ll)) {
                 pos = snprintf(buffer, 128, "%lld", ll);
             } else {
                 pos = snprintf(buffer, 128, "%g", d);
