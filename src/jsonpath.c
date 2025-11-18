@@ -39,18 +39,41 @@ static int eval_steps(JsonValue *doc, Scan *sc, NodeVec *out, int *emitted);
 
 // Utilities to iterate object/array with names and indices
 static void foreach_object(JsonValue *obj, void (*cb)(const char*, JsonValue*, void*), void *ud){
-    if(!obj || obj->type!=JSON_OBJECT) return; for(JsonKeyValue *kv=obj->value.object_head; kv; kv=kv->next){ cb(kv->key, kv->value, ud); }
+    if(!obj || obj->type!=JSON_OBJECT) return;
+    for(JsonKeyValue *kv=obj->value.object_head; kv; kv=kv->next){
+        cb(kv->key, kv->value, ud);
+    }
 }
 static void foreach_array(JsonValue *arr, void (*cb)(int, JsonValue*, void*), void *ud){
-    if(!arr || arr->type!=JSON_ARRAY) return; int idx=0; for(JsonArrayItem *it=arr->value.array_head; it; it=it->next, idx++){ cb(idx, it->value, ud); }
+    if(!arr || arr->type!=JSON_ARRAY) return;
+    int idx=0;
+    for(JsonArrayItem *it=arr->value.array_head; it; it=it->next, idx++){
+        cb(idx, it->value, ud);
+    }
 }
 
 // Build child path strings
-static char* path_append_prop(const char *base, const char *name){ Str b; sb_init(&b); if(!sb_puts(&b, base? base: "$")) return NULL; if(name && *name && (isalpha((unsigned char)name[0])||name[0]=='_' )){
-    if(!sb_putc(&b, '.')) return NULL; if(!sb_puts(&b, name)) return NULL;
-} else {
-    if(!sb_puts(&b, "['")) return NULL; if(!sb_puts(&b, name? name: "")) return NULL; if(!sb_puts(&b, "']")) return NULL;
-}
+static char* path_append_prop(const char *base, const char *name){
+    Str b;
+    sb_init(&b);
+
+    if(!sb_puts(&b, base ? base : "$"))
+        return NULL;
+
+    if(name && *name && (isalpha((unsigned char)name[0]) || name[0]=='_')){
+        if(!sb_putc(&b, '.'))
+            return NULL;
+        if(!sb_puts(&b, name))
+            return NULL;
+    } else {
+        if(!sb_puts(&b, "['"))
+            return NULL;
+        if(!sb_puts(&b, name ? name : ""))
+            return NULL;
+        if(!sb_puts(&b, "']"))
+            return NULL;
+    }
+
     return sb_steal(&b);
 }
 static char* path_append_index(const char *base, int idx){ char buf[64]; snprintf(buf,sizeof(buf),"[%d]", idx); Str b; sb_init(&b); if(!sb_puts(&b, base? base: "$")) return NULL; if(!sb_puts(&b, buf)) return NULL; return sb_steal(&b); }
@@ -95,9 +118,36 @@ static int apply_child_name(NodeVec *cur, const char *name, NodeVec *next, int *
 }
 static int apply_wildcard(NodeVec *cur, NodeVec *next){
     for(int i=0;i<cur->count;i++){
-        JsonValue *v=cur->items[i].val; const char *p=cur->items[i].path? cur->items[i].path: "$";
-        if(!v) continue; if(v->type==JSON_OBJECT){ for(JsonKeyValue *kv=v->value.object_head; kv; kv=kv->next){ char *np=path_append_prop(p, kv->key); if(!np) return 0; if(!nv_push(next, kv->value, np)){ free(np); return 0; } free(np);} }
-        else if(v->type==JSON_ARRAY){ int idx=0; for(JsonArrayItem *it=v->value.array_head; it; it=it->next, idx++){ char *np=path_append_index(p, idx); if(!np) return 0; if(!nv_push(next, it->value, np)){ free(np); return 0; } free(np);} }
+        JsonValue *v=cur->items[i].val;
+        const char *p=cur->items[i].path ? cur->items[i].path : "$";
+
+        if(!v)
+            continue;
+
+        if(v->type==JSON_OBJECT){
+            for(JsonKeyValue *kv=v->value.object_head; kv; kv=kv->next){
+                char *np=path_append_prop(p, kv->key);
+                if(!np)
+                    return 0;
+                if(!nv_push(next, kv->value, np)){
+                    free(np);
+                    return 0;
+                }
+                free(np);
+            }
+        } else if(v->type==JSON_ARRAY){
+            int idx=0;
+            for(JsonArrayItem *it=v->value.array_head; it; it=it->next, idx++){
+                char *np=path_append_index(p, idx);
+                if(!np)
+                    return 0;
+                if(!nv_push(next, it->value, np)){
+                    free(np);
+                    return 0;
+                }
+                free(np);
+            }
+        }
     }
     return 1;
 }
@@ -134,7 +184,8 @@ static JsonValue* parse_literal(Scan *sc){ skip_ws_opt(sc); if(match(sc,"true"))
     sc->pos = pos0; return NULL;
 }
 
-static int eval_cmp(Scan *sc, JsonValue *ctx){ skip_ws_opt(sc);
+static int eval_cmp(Scan *sc, JsonValue *ctx){
+    skip_ws_opt(sc);
     JsonValue *lhs=NULL, *rhs=NULL; int lhs_is_path=0, rhs_is_path=0;
     if(peek(sc)=='@'){ getc_(sc); lhs = eval_path_from_at(sc, ctx); lhs_is_path=1; }
     else { lhs = parse_literal(sc); }
@@ -146,24 +197,53 @@ static int eval_cmp(Scan *sc, JsonValue *ctx){ skip_ws_opt(sc);
     skip_ws_opt(sc);
     if(peek(sc)=='@'){ getc_(sc); rhs = eval_path_from_at(sc, ctx); rhs_is_path=1; }
     else { rhs = parse_literal(sc); }
-    int res = 0; if(lhs && rhs) res = cmp_values(lhs, rhs, op);
-    if(lhs && !lhs_is_path) free_json_value(lhs); if(rhs && !rhs_is_path) free_json_value(rhs);
+    int res = 0;
+    if(lhs && rhs)
+        res = cmp_values(lhs, rhs, op);
+    if(lhs && !lhs_is_path)
+        free_json_value(lhs);
+    if(rhs && !rhs_is_path)
+        free_json_value(rhs);
     return res;
 }
 
 static int numcmp(double a, double b){ if(a<b) return -1; if(a>b) return 1; return 0; }
 static int strcmp_null(const char *a, const char *b){ if(!a&&!b) return 0; if(!a) return -1; if(!b) return 1; return strcmp(a,b); }
 static int cmp_values(JsonValue *a, JsonValue *b, const char *op){
-    if(a->type==JSON_NUMBER && b->type==JSON_NUMBER){ int c=numcmp(a->value.number,b->value.number);
-        if(strcmp(op,"==")==0) return c==0; if(strcmp(op,"!=")==0) return c!=0; if(strcmp(op,">" )==0) return c>0; if(strcmp(op,">=")==0) return c>=0; if(strcmp(op,"<")==0) return c<0; if(strcmp(op,"<=")==0) return c<=0; }
+    if(a->type==JSON_NUMBER && b->type==JSON_NUMBER){
+        int c=numcmp(a->value.number,b->value.number);
+        if(strcmp(op,"==")==0) return c==0;
+        if(strcmp(op,"!=")==0) return c!=0;
+        if(strcmp(op,">" )==0) return c>0;
+        if(strcmp(op,">=")==0) return c>=0;
+        if(strcmp(op,"<")==0)  return c<0;
+        if(strcmp(op,"<=")==0) return c<=0;
+    }
     // Compare strings lexicographically
-    if(a->type==JSON_STRING && b->type==JSON_STRING){ int c=strcmp_null(a->value.string,b->value.string);
-        if(strcmp(op,"==")==0) return c==0; if(strcmp(op,"!=")==0) return c!=0; if(strcmp(op,">" )==0) return c>0; if(strcmp(op,">=")==0) return c>=0; if(strcmp(op,"<")==0) return c<0; if(strcmp(op,"<=")==0) return c<=0; }
+    if(a->type==JSON_STRING && b->type==JSON_STRING){
+        int c=strcmp_null(a->value.string,b->value.string);
+        if(strcmp(op,"==")==0) return c==0;
+        if(strcmp(op,"!=")==0) return c!=0;
+        if(strcmp(op,">" )==0) return c>0;
+        if(strcmp(op,">=")==0) return c>=0;
+        if(strcmp(op,"<")==0)  return c<0;
+        if(strcmp(op,"<=")==0) return c<=0;
+    }
     // bool vs bool
-    if(a->type==JSON_BOOL && b->type==JSON_BOOL){ int c= (a->value.boolean - b->value.boolean);
-        if(strcmp(op,"==")==0) return c==0; if(strcmp(op,"!=")==0) return c!=0; if(strcmp(op,">" )==0) return c>0; if(strcmp(op,">=")==0) return c>=0; if(strcmp(op,"<")==0) return c<0; if(strcmp(op,"<=")==0) return c<=0; }
+    if(a->type==JSON_BOOL && b->type==JSON_BOOL){
+        int c = a->value.boolean - b->value.boolean;
+        if(strcmp(op,"==")==0) return c==0;
+        if(strcmp(op,"!=")==0) return c!=0;
+        if(strcmp(op,">" )==0) return c>0;
+        if(strcmp(op,">=")==0) return c>=0;
+        if(strcmp(op,"<")==0)  return c<0;
+        if(strcmp(op,"<=")==0) return c<=0;
+    }
     // null comparisons: only == and !=
-    if(a->type==JSON_NULL || b->type==JSON_NULL){ if(strcmp(op,"==")==0) return a->type==b->type; if(strcmp(op,"!=")==0) return a->type!=b->type; }
+    if(a->type==JSON_NULL || b->type==JSON_NULL){
+        if(strcmp(op,"==")==0) return a->type==b->type;
+        if(strcmp(op,"!=")==0) return a->type!=b->type;
+    }
     return 0;
 }
 
@@ -214,9 +294,47 @@ static int apply_array_subscript(NodeVec *cur, Scan *sc, NodeVec *next){ skip_ws
     // Union of names? ['a','b'] or ["a","b"]
     if(peek(sc)=='\'' || peek(sc)=='"'){
         // Collect names
-        char **names=NULL; int n=0,cap=0; do{ char *q=parse_quoted(sc); if(!q) return 0; if(n==cap){ int nc=cap?cap*2:4; char **nn=(char**)realloc(names, nc*sizeof(char*)); if(!nn){ free(q); return 0;} names=nn; cap=nc;} names[n++]=q; skip_ws(sc); } while(match(sc, ",")); if(!match(sc,"]")){ for(int i=0;i<n;i++) free(names[i]); free(names); return 0; }
-        for(int i=0;i<cur->count;i++){ JsonValue *v=cur->items[i].val; const char *p=cur->items[i].path? cur->items[i].path: "$"; if(v && v->type==JSON_OBJECT){ for(int k=0;k<n;k++){ JsonValue *c=get_object_item(v, names[k]); if(c){ char *np=path_append_prop(p, names[k]); if(!np) return 0; if(!nv_push(next, c, np)){ free(np); return 0; } free(np);} } } }
-        for(int i=0;i<n;i++) free(names[i]); free(names); return 1;
+        char **names=NULL; int n=0,cap=0;
+        do{
+            char *q=parse_quoted(sc);
+            if(!q) return 0;
+            if(n==cap){
+                int nc=cap?cap*2:4;
+                char **nn=(char**)realloc(names, nc*sizeof(char*));
+                if(!nn){ free(q); return 0;}
+                names=nn; cap=nc;
+            }
+            names[n++]=q;
+            skip_ws(sc);
+        } while(match(sc, ","));
+        if(!match(sc,"]")){
+            for(int i=0;i<n;i++) free(names[i]);
+            free(names);
+            return 0;
+        }
+        for(int i=0;i<cur->count;i++){
+            JsonValue *v=cur->items[i].val;
+            const char *p=cur->items[i].path? cur->items[i].path: "$";
+            if(v && v->type==JSON_OBJECT){
+                for(int k=0;k<n;k++){
+                    JsonValue *c=get_object_item(v, names[k]);
+                    if(c){
+                        char *np=path_append_prop(p, names[k]);
+                        if(!np) return 0;
+                        if(!nv_push(next, c, np)){
+                            free(np);
+                            return 0;
+                        }
+                        free(np);
+                    }
+                }
+            }
+        }
+        for(int i=0;i<n;i++) {
+            free(names[i]);
+        }
+        free(names);
+        return 1;
     }
 
     // Indices/union/slice
@@ -224,8 +342,16 @@ static int apply_array_subscript(NodeVec *cur, Scan *sc, NodeVec *next){ skip_ws
     skip_ws(sc);
     if(match(sc, ":")){
         // slice start:end[:step]
-        int has_end=0, has_step=0; int end=0, step=1; if(peek(sc)!=']'){ if(peek(sc)!=':'){ end=parse_int(sc,&has_end); if(!has_end){ end=0; } }
-            if(match(sc, ":")){ has_step=1; step=parse_int(sc,&ok); if(!ok) step=1; }
+        int has_end=0; int end=0, step=1;
+        if(peek(sc)!=']'){
+            if(peek(sc)!=':'){
+                end=parse_int(sc,&has_end);
+                if(!has_end){ end=0; }
+            }
+            if(match(sc, ":")){
+                step=parse_int(sc,&ok);
+                if(!ok) step=1;
+            }
         }
         skip_ws(sc); if(!match(sc, "]")) return 0;
         for(int i=0;i<cur->count;i++){ JsonValue *v=cur->items[i].val; const char *p=cur->items[i].path? cur->items[i].path: "$"; if(v && v->type==JSON_ARRAY){ int n=get_array_size(v); int s=start; int e= has_end? end : n; if(s<0||e<0){ if(((JsonPathOptions*)sc->opt)->strict){ set_err(sc->opt,"negative indices not supported", sc->pos); return 0; } else { continue; } } if(s<0) s=0; if(e>n) e=n; if(step<=0) step=1; for(int idx=s; idx<e; idx+=step){ JsonValue *c=get_array_item(v, idx); if(c){ char *np=path_append_index(p, idx); if(!np) return 0; if(!nv_push(next, c, np)){ free(np); return 0;} free(np);} } } }
@@ -283,9 +409,41 @@ static int eval_steps(JsonValue *doc, Scan *sc, NodeVec *out, int *emitted){
     return 1;
 }
 
-static JsonValue* build_values_array(const NodeVec *nodes){ JsonValue *arr=create_json_value(JSON_ARRAY); if(!arr) return NULL; for(int i=0;i<nodes->count;i++){ JsonValue *dup=clone_json_value(nodes->items[i].val); if(!dup) { free_json_value(arr); return NULL; } add_to_array(arr, dup); } return arr; }
-static JsonValue* build_paths_array(const NodeVec *nodes){ JsonValue *arr=create_json_value(JSON_ARRAY); if(!arr) return NULL; for(int i=0;i<nodes->count;i++){ JsonValue *s=create_json_value(JSON_STRING); if(!s){ free_json_value(arr); return NULL; } s->value.string = nodes->items[i].path? strdup(nodes->items[i].path): strdup("$"); add_to_array(arr, s); } return arr; }
-static JsonValue* build_pairs_array(const NodeVec *nodes){ JsonValue *arr=create_json_value(JSON_ARRAY); if(!arr) return NULL; for(int i=0;i<nodes->count;i++){ JsonValue *obj=create_json_value(JSON_OBJECT); if(!obj){ free_json_value(arr); return NULL; } JsonValue *sp=create_json_value(JSON_STRING); if(!sp){ free_json_value(obj); free_json_value(arr); return NULL; } sp->value.string = nodes->items[i].path? strdup(nodes->items[i].path): strdup("$"); add_to_object(obj, "path", sp); JsonValue *val=clone_json_value(nodes->items[i].val); if(!val){ free_json_value(obj); free_json_value(arr); return NULL; } add_to_object(obj, "value", val); add_to_array(arr, obj); } return arr; }
+static JsonValue* build_values_array(const NodeVec *nodes){
+    JsonValue *arr=create_json_value(JSON_ARRAY); if(!arr) return NULL;
+    for(int i=0;i<nodes->count;i++){
+        JsonValue *dup=clone_json_value(nodes->items[i].val);
+        if(!dup) { free_json_value(arr); return NULL; }
+        add_to_array(arr, dup);
+    }
+    return arr;
+}
+static JsonValue* build_paths_array(const NodeVec *nodes){
+    JsonValue *arr=create_json_value(JSON_ARRAY); if(!arr) return NULL;
+    for(int i=0;i<nodes->count;i++){
+        JsonValue *s=create_json_value(JSON_STRING);
+        if(!s){ free_json_value(arr); return NULL; }
+        s->value.string = nodes->items[i].path? strdup(nodes->items[i].path): strdup("$");
+        add_to_array(arr, s);
+    }
+    return arr;
+}
+static JsonValue* build_pairs_array(const NodeVec *nodes){
+    JsonValue *arr=create_json_value(JSON_ARRAY); if(!arr) return NULL;
+    for(int i=0;i<nodes->count;i++){
+        JsonValue *obj=create_json_value(JSON_OBJECT);
+        if(!obj){ free_json_value(arr); return NULL; }
+        JsonValue *sp=create_json_value(JSON_STRING);
+        if(!sp){ free_json_value(obj); free_json_value(arr); return NULL; }
+        sp->value.string = nodes->items[i].path? strdup(nodes->items[i].path): strdup("$");
+        add_to_object(obj, "path", sp);
+        JsonValue *val=clone_json_value(nodes->items[i].val);
+        if(!val){ free_json_value(obj); free_json_value(arr); return NULL; }
+        add_to_object(obj, "value", val);
+        add_to_array(arr, obj);
+    }
+    return arr;
+}
 
 JsonPathResults *evaluate_jsonpath(JsonValue *doc, const char *expression, const JsonPathOptions *options){ if(!doc || !expression){ if(options && options->strict) fprintf(stderr,"jsonpath: null doc or expression\n"); return NULL; }
     Scan sc = { .s=expression, .pos=0, .len=(int)strlen(expression), .opt=options };
