@@ -13,12 +13,12 @@ extern "C" {
 
 // JSON value types
 typedef enum {
-    JSON_NULL,
-    JSON_BOOL,
-    JSON_NUMBER,
-    JSON_STRING,
-    JSON_ARRAY,
-    JSON_OBJECT
+  JSON_NULL,
+  JSON_BOOL,
+  JSON_NUMBER,
+  JSON_STRING,
+  JSON_ARRAY,
+  JSON_OBJECT
 } JsonType;
 
 // Forward declaration for JsonValue
@@ -26,27 +26,27 @@ typedef struct JsonValue JsonValue;
 
 // Structure for key-value pairs in objects
 typedef struct JsonKeyValue {
-    char *key;
-    JsonValue *value;
-    struct JsonKeyValue *next;
+  char *key;
+  JsonValue *value;
+  struct JsonKeyValue *next;
 } JsonKeyValue;
 
 // Structure for array elements
 typedef struct JsonArrayItem {
-    JsonValue *value;
-    struct JsonArrayItem *next;
+  JsonValue *value;
+  struct JsonArrayItem *next;
 } JsonArrayItem;
 
 // Structure for JSON values
 struct JsonValue {
-    JsonType type;
-    union {
-        int boolean;
-        double number;
-        char *string;
-        JsonArrayItem *array_head;
-        JsonKeyValue *object_head;
-    } value;
+  JsonType type;
+  union {
+    int boolean;
+    double number;
+    char *string;
+    JsonArrayItem *array_head;
+    JsonKeyValue *object_head;
+  } value;
 };
 
 // JSON value functions
@@ -62,7 +62,6 @@ JsonValue *get_object_item(JsonValue *object, const char *key);
 JsonValue *parse_json_file(const char *filepath);
 // Parse from a JSON string buffer
 JsonValue *parse_json_string(const char *json_str);
-
 
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
