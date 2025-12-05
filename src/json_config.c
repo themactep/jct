@@ -454,6 +454,72 @@ int save_config(const char *filepath, JsonValue *json) {
   return 1;
 }
 
+// Helper that merges src object members into dest object recursively.
+static int merge_object_into(JsonValue *dest_obj, const JsonValue *src_obj) {
+  if (!dest_obj || !src_obj || dest_obj->type != JSON_OBJECT ||
+      src_obj->type != JSON_OBJECT) {
+    return 0;
+  }
+
+  JsonKeyValue *kv = src_obj->value.object_head;
+  while (kv) {
+    const char *key = kv->key ? kv->key : "";
+    JsonValue *dest_child = get_object_item(dest_obj, key);
+    JsonValue *src_child = kv->value;
+
+    if (dest_child && src_child && dest_child->type == JSON_OBJECT &&
+        src_child->type == JSON_OBJECT) {
+      if (!merge_object_into(dest_child, src_child)) {
+        return 0;
+      }
+    } else {
+      JsonValue *replacement = src_child ? clone_json_value(src_child)
+                                         : create_json_value(JSON_NULL);
+      if (!replacement) {
+        return 0;
+      }
+      if (!add_to_object(dest_obj, key, replacement)) {
+        free_json_value(replacement);
+        return 0;
+      }
+    }
+
+    kv = kv->next;
+  }
+
+  return 1;
+}
+
+int merge_json_into(JsonValue **dest_ptr, const JsonValue *src) {
+  if (!dest_ptr || !src) {
+    return 0;
+  }
+
+  if (!*dest_ptr) {
+    JsonValue *clone = clone_json_value(src);
+    if (!clone) {
+      return 0;
+    }
+    *dest_ptr = clone;
+    return 1;
+  }
+
+  JsonValue *dest = *dest_ptr;
+
+  if (dest->type == JSON_OBJECT && src->type == JSON_OBJECT) {
+    return merge_object_into(dest, src);
+  }
+
+  JsonValue *replacement = clone_json_value(src);
+  if (!replacement) {
+    return 0;
+  }
+
+  free_json_value(dest);
+  *dest_ptr = replacement;
+  return 1;
+}
+
 /**
  * Gets a nested item using dot notation
  *

@@ -74,6 +74,7 @@ JsonValue *load_config(const char *filepath);
 int save_config(const char *filepath, JsonValue *json);
 JsonValue *get_nested_item(JsonValue *object, const char *key);
 int set_nested_item(JsonValue *object, const char *key, const char *value_str);
+int merge_json_into(JsonValue **dest_ptr, const JsonValue *src);
 void print_item(JsonValue *item);
 
 #ifdef __cplusplus

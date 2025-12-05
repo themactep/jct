@@ -267,6 +267,8 @@ static void print_usage(void) {
          "file\n");
   printf("  <config_file> set <key> <value>      Set a value in the config "
          "file\n");
+  printf("  <config_file> import <source_file>    Merge values from another "
+         "JSON file\n");
   printf("  <config_file> create                 Create a new empty config "
          "file\n");
   printf("  <config_file> print                  Print the entire config "
@@ -278,7 +280,7 @@ static void print_usage(void) {
   printf("\n");
   printf("Options:\n");
   printf("  --trace-resolve                      Trace short-name resolution "
-         "steps (get/set/print/restore)\n");
+         "steps (get/set/import/print/restore)\n");
   printf("  path options: --mode values|paths|pairs [--limit N] [--strict] "
          "[--pretty] [--unwrap-single]\n");
   printf("\n");
@@ -457,6 +459,48 @@ static int handle_restore_command(const char *config_file) {
   return 0;
 }
 
+// Function to handle the 'import' command
+static int handle_import_command(const char *dest_file,
+                                 const char *source_file) {
+  JsonValue *dest = load_config(dest_file);
+  if (!dest) {
+    dest = create_json_value(JSON_OBJECT);
+    if (!dest) {
+      fprintf(stderr,
+              "Error: Failed to create destination object for '%s'.\n",
+              dest_file);
+      return 1;
+    }
+  }
+
+  JsonValue *source = load_config(source_file);
+  if (!source) {
+    fprintf(stderr, "Error: Failed to load source file '%s'.\n", source_file);
+    free_json_value(dest);
+    return 1;
+  }
+
+  if (!merge_json_into(&dest, source)) {
+    fprintf(stderr, "Error: Failed to merge '%s' into '%s'.\n", source_file,
+            dest_file);
+    free_json_value(source);
+    free_json_value(dest);
+    return 1;
+  }
+
+  if (!save_config(dest_file, dest)) {
+    fprintf(stderr, "Error: Failed to save merged config to '%s'.\n",
+            dest_file);
+    free_json_value(source);
+    free_json_value(dest);
+    return 1;
+  }
+
+  free_json_value(source);
+  free_json_value(dest);
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   // Gather non-flag arguments and recognize --trace-resolve
   int trace_resolve = 0;
@@ -526,6 +570,41 @@ int main(int argc, char *argv[]) {
       return 2;
     }
     cfg_for_handlers = config_target; // explicit path
+  } else if (strcmp(command, "import") == 0) {
+    if (nidx < 3) {
+      fprintf(stderr, "Error: 'import' command requires a source file.\n");
+      print_usage();
+      return 1;
+    }
+
+    const char *source_target = argv[idxs[2]];
+    const char *dest_path = config_target;
+    char dest_resolved[PATH_MAX];
+
+    if (!(has_path_separator(config_target) ||
+          ends_with_json_ext(config_target))) {
+      int rc = resolve_config_target(config_target, trace_resolve,
+                                     dest_resolved, sizeof(dest_resolved));
+      if (rc != 0) {
+        if (rc == 2) {
+          fprintf(stderr,
+                  "jct: to create a new file, supply an explicit path (e.g., "
+                  "./%s.json)\n",
+                  config_target);
+        }
+        return rc;
+      }
+      dest_path = dest_resolved;
+    }
+
+    char source_resolved[PATH_MAX];
+    int rc = resolve_config_target(source_target, trace_resolve,
+                                   source_resolved,
+                                   sizeof(source_resolved));
+    if (rc != 0) {
+      return rc;
+    }
+    return handle_import_command(dest_path, source_resolved);
   }
 
   // Dispatch

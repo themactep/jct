@@ -8,6 +8,7 @@ it suitable for cross-compilation and embedded systems.
 
 - Read values from JSON configuration files using dot notation
 - Write values to JSON configuration files using dot notation
+- Import values from one JSON file into another via deep merge
 - Create new JSON configuration files
 - Print entire JSON configuration files
 - Restore configuration files to original state (OverlayFS support)
@@ -78,12 +79,13 @@ Usage: jct [--trace-resolve] <config_file> <command> [options]
 Commands:
   <config_file> get <key>              Get a value from the config file
   <config_file> set <key> <value>      Set a value in the config file
+  <config_file> import <source_file>   Merge values from another JSON file
   <config_file> create                 Create a new empty config file
   <config_file> print                  Print the entire config file
   <config_file> restore                Restore config file to original state (OverlayFS)
 
 Options:
-  --trace-resolve                      Trace short-name resolution steps
+  --trace-resolve                      Trace short-name resolution steps (get/set/import/print/restore)
 
 Short-name resolution (when <config_file> has no '/' and does not end with .json):
   Tries, in order: ./<name>, ./<name>.json, /etc/<name>.json (POSIX only)
@@ -94,6 +96,7 @@ Short-name resolution (when <config_file> has no '/' and does not end with .json
 Creation rules:
   - create requires an explicit path
   - set may create a new file only with an explicit path
+  - import follows the same rule as set for its destination file; use an explicit path to create a new config
   - Using a short name that does not resolve will not create; the command exits 2 with guidance
 
 Examples:
@@ -154,6 +157,21 @@ Tip:
 ./jct config.json set app.name "My Application"
 ./jct config.json set app.version 1.0
 ```
+
+#### Importing values from another JSON file
+
+```bash
+./jct base_config.json import overrides.json
+```
+
+The `import` command deep-merges the source file into the destination:
+
+- Nested objects are merged recursively so you can override just a few keys
+- Arrays or non-object values from the source replace the destination value entirely
+- Any keys that exist only in the source are added to the destination
+
+This makes it easy to check in small overlay files (for example, only `image.hflip`
+and `image.vflip`) and import them into a larger device profile in one step.
 
 #### JSONPath queries (new)
 
