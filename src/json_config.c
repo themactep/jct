@@ -520,6 +520,158 @@ int merge_json_into(JsonValue **dest_ptr, const JsonValue *src) {
   return 1;
 }
 
+// Helper to check if two JSON values are equal
+static int json_values_equal(const JsonValue *a, const JsonValue *b) {
+  if (!a && !b) {
+    return 1;
+  }
+  if (!a || !b) {
+    return 0;
+  }
+  if (a->type != b->type) {
+    return 0;
+  }
+
+  switch (a->type) {
+  case JSON_NULL:
+    return 1;
+  case JSON_BOOL:
+    return a->value.boolean == b->value.boolean;
+  case JSON_NUMBER:
+    return a->value.number == b->value.number;
+  case JSON_STRING:
+    if (!a->value.string && !b->value.string) {
+      return 1;
+    }
+    if (!a->value.string || !b->value.string) {
+      return 0;
+    }
+    return strcmp(a->value.string, b->value.string) == 0;
+  case JSON_ARRAY: {
+    int size_a = get_array_size((JsonValue *)a);
+    int size_b = get_array_size((JsonValue *)b);
+    if (size_a != size_b) {
+      return 0;
+    }
+    for (int i = 0; i < size_a; i++) {
+      JsonValue *item_a = get_array_item((JsonValue *)a, i);
+      JsonValue *item_b = get_array_item((JsonValue *)b, i);
+      if (!json_values_equal(item_a, item_b)) {
+        return 0;
+      }
+    }
+    return 1;
+  }
+  case JSON_OBJECT: {
+    JsonKeyValue *kv_a = a->value.object_head;
+    while (kv_a) {
+      const char *key = kv_a->key ? kv_a->key : "";
+      JsonValue *val_b = get_object_item((JsonValue *)b, key);
+      if (!json_values_equal(kv_a->value, val_b)) {
+        return 0;
+      }
+      kv_a = kv_a->next;
+    }
+    JsonKeyValue *kv_b = b->value.object_head;
+    while (kv_b) {
+      const char *key = kv_b->key ? kv_b->key : "";
+      JsonValue *val_a = get_object_item((JsonValue *)a, key);
+      if (!val_a) {
+        return 0;
+      }
+      kv_b = kv_b->next;
+    }
+    return 1;
+  }
+  }
+  return 0;
+}
+
+// Helper that diffs objects recursively
+static JsonValue *diff_objects(const JsonValue *modified_obj,
+                               const JsonValue *original_obj) {
+  if (!modified_obj || modified_obj->type != JSON_OBJECT) {
+    return NULL;
+  }
+
+  JsonValue *diff = create_json_value(JSON_OBJECT);
+  if (!diff) {
+    return NULL;
+  }
+
+  JsonKeyValue *kv = modified_obj->value.object_head;
+  while (kv) {
+    const char *key = kv->key ? kv->key : "";
+    JsonValue *modified_child = kv->value;
+    JsonValue *original_child =
+        original_obj ? get_object_item((JsonValue *)original_obj, key) : NULL;
+
+    // If key doesn't exist in original, include it
+    if (!original_child) {
+      JsonValue *cloned = clone_json_value(modified_child);
+      if (cloned) {
+        add_to_object(diff, key, cloned);
+      }
+    }
+    // If both are objects, recursively diff them
+    else if (modified_child && modified_child->type == JSON_OBJECT &&
+             original_child->type == JSON_OBJECT) {
+      JsonValue *child_diff = diff_objects(modified_child, original_child);
+      if (child_diff) {
+        // Only include if the child diff is not empty
+        if (child_diff->value.object_head != NULL) {
+          add_to_object(diff, key, child_diff);
+        } else {
+          free_json_value(child_diff);
+        }
+      }
+    }
+    // If values are different, include the modified value
+    else if (!json_values_equal(modified_child, original_child)) {
+      JsonValue *cloned = clone_json_value(modified_child);
+      if (cloned) {
+        add_to_object(diff, key, cloned);
+      }
+    }
+
+    kv = kv->next;
+  }
+
+  return diff;
+}
+
+/**
+ * Computes the difference between two JSON values
+ *
+ * @param modified The modified/current JSON value
+ * @param original The original/base JSON value to compare against
+ * @return A new JSON value containing only the differences, or NULL on error
+ */
+JsonValue *diff_json(const JsonValue *modified, const JsonValue *original) {
+  if (!modified) {
+    return NULL;
+  }
+
+  // If no original, return a clone of modified
+  if (!original) {
+    return clone_json_value(modified);
+  }
+
+  // If both are objects, perform recursive diff
+  if (modified->type == JSON_OBJECT && original->type == JSON_OBJECT) {
+    return diff_objects(modified, original);
+  }
+
+  // If they're not both objects, check if they're equal
+  if (json_values_equal(modified, original)) {
+    // Return empty object if equal
+    return create_json_value(JSON_OBJECT);
+  }
+
+  // If different types or different values, return the modified value
+  return clone_json_value(modified);
+}
+
 /**
  * Gets a nested item using dot notation
  *

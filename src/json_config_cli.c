@@ -269,6 +269,8 @@ static void print_usage(void) {
          "file\n");
   printf("  <config_file> import <source_file>    Merge values from another "
          "JSON file\n");
+  printf("  <config_file> export [<original_file>]\n");
+  printf("                                       Export differences to stdout\n");
   printf("  <config_file> create                 Create a new empty config "
          "file\n");
   printf("  <config_file> print                  Print the entire config "
@@ -302,6 +304,12 @@ static void print_usage(void) {
          "create\n");
   printf("  jct config.json print                 Print the entire config "
          "file\n");
+  printf("  jct /etc/prudynt.json export > diff.json\n");
+  printf("                                        Export differences (compares "
+         "with /rom version)\n");
+  printf("  jct modified.json export base.json > diff.json\n");
+  printf("                                        Export differences between "
+         "two files\n");
   printf("  jct /etc/config.json restore          Restore /etc/config.json "
          "(absolute path required)\n");
   printf("  jct books.json path '$..author' --mode values\n");
@@ -501,6 +509,63 @@ static int handle_import_command(const char *dest_file,
   return 0;
 }
 
+// Function to handle the 'export' command
+static int handle_export_command(const char *modified_file,
+                                 const char *original_file) {
+  // Determine the original file path
+  char default_original[PATH_MAX];
+  const char *original_path = original_file;
+
+  if (!original_file) {
+    // Default to /rom/<modified_file> for OverlayFS systems
+    if (modified_file[0] == '/') {
+      snprintf(default_original, sizeof(default_original), "/rom%s",
+               modified_file);
+      original_path = default_original;
+    } else {
+      fprintf(stderr,
+              "Error: 'export' requires an explicit path or an original file "
+              "to compare against.\n");
+      return 1;
+    }
+  }
+
+  JsonValue *modified = load_config(modified_file);
+  if (!modified) {
+    fprintf(stderr, "Error: Failed to load modified file '%s'.\n",
+            modified_file);
+    return 1;
+  }
+
+  JsonValue *original = load_config(original_path);
+  if (!original) {
+    fprintf(stderr, "Error: Failed to load original file '%s'.\n",
+            original_path);
+    if (!original_file) {
+      fprintf(stderr,
+              "Hint: Provide an explicit original file to compare against.\n");
+    }
+    free_json_value(modified);
+    return 1;
+  }
+
+  JsonValue *diff = diff_json(modified, original);
+  if (!diff) {
+    fprintf(stderr, "Error: Failed to compute differences.\n");
+    free_json_value(modified);
+    free_json_value(original);
+    return 1;
+  }
+
+  // Print diff to stdout
+  print_item(diff);
+
+  free_json_value(modified);
+  free_json_value(original);
+  free_json_value(diff);
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   // Gather non-flag arguments and recognize --trace-resolve
   int trace_resolve = 0;
@@ -605,6 +670,39 @@ int main(int argc, char *argv[]) {
       return rc;
     }
     return handle_import_command(dest_path, source_resolved);
+  } else if (strcmp(command, "export") == 0) {
+    const char *original_file = (nidx >= 3) ? argv[idxs[2]] : NULL;
+    const char *modified_path = config_target;
+    char modified_resolved[PATH_MAX];
+
+    if (!(has_path_separator(config_target) ||
+          ends_with_json_ext(config_target))) {
+      int rc = resolve_config_target(config_target, trace_resolve,
+                                     modified_resolved,
+                                     sizeof(modified_resolved));
+      if (rc != 0) {
+        return rc;
+      }
+      modified_path = modified_resolved;
+    }
+
+    // Resolve original file if provided
+    char original_resolved[PATH_MAX];
+    const char *original_path = original_file;
+    if (original_file) {
+      if (!(has_path_separator(original_file) ||
+            ends_with_json_ext(original_file))) {
+        int rc = resolve_config_target(original_file, trace_resolve,
+                                       original_resolved,
+                                       sizeof(original_resolved));
+        if (rc != 0) {
+          return rc;
+        }
+        original_path = original_resolved;
+      }
+    }
+
+    return handle_export_command(modified_path, original_path);
   }
 
   // Dispatch
