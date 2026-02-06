@@ -9,6 +9,7 @@ it suitable for cross-compilation and embedded systems.
 - Read values from JSON configuration files using dot notation
 - Write values to JSON configuration files using dot notation
 - Import values from one JSON file into another via deep merge
+- Export differences between two JSON files (useful for OverlayFS systems)
 - Create new JSON configuration files
 - Print entire JSON configuration files
 - Restore configuration files to original state (OverlayFS support)
@@ -80,6 +81,8 @@ Commands:
   <config_file> get <key>              Get a value from the config file
   <config_file> set <key> <value>      Set a value in the config file
   <config_file> import <source_file>   Merge values from another JSON file
+  <config_file> export [<original_file>]
+                                       Export differences to stdout
   <config_file> create                 Create a new empty config file
   <config_file> print                  Print the entire config file
   <config_file> restore                Restore config file to original state (OverlayFS)
@@ -104,6 +107,10 @@ Examples:
   jct prudynt set app.name "My App"     Resolve and update existing; to create, use explicit path
   jct ./prudynt set app.name "My App"   Explicit path; allowed to create
   jct config.json print                 Print the entire config file
+  jct /etc/prudynt.json export > diff.json
+                                        Export differences (compares with /rom version)
+  jct modified.json export base.json > diff.json
+                                        Export differences between two files
 ```
 ### Exit codes
 
@@ -172,6 +179,36 @@ The `import` command deep-merges the source file into the destination:
 
 This makes it easy to check in small overlay files (for example, only `image.hflip`
 and `image.vflip`) and import them into a larger device profile in one step.
+
+#### Exporting differences between JSON files
+
+```bash
+./jct /etc/config.json export > differences.json
+```
+
+The `export` command compares two JSON files and outputs only the differences (keys and values that differ or exist only in the modified file):
+
+- When called with an absolute path (e.g., `/etc/config.json`), it defaults to comparing with `/rom/<config_file>` (for OverlayFS systems)
+- You can specify a custom original file to compare against:
+  ```bash
+  ./jct modified.json export base.json > diff.json
+  ```
+- The output is a JSON object containing only the modified or added keys
+- This is useful for creating minimal overlay configurations or tracking what has changed from a baseline
+
+**Usage patterns:**
+
+```bash
+# Export differences from an OverlayFS system (compares /etc/config.json with /rom/etc/config.json)
+./jct /etc/config.json export > changes.json
+
+# Export differences between any two JSON files
+./jct current.json export original.json > diff.json
+
+# Use the output to create a minimal overlay file
+./jct current.json export baseline.json > overlay.json
+./jct new_device.json import overlay.json
+```
 
 #### JSONPath queries (new)
 
