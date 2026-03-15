@@ -8,12 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct json_tokener {
-  char *buffer;
-  size_t len;
-  size_t cap;
-};
-
 /**
  * Creates a new JSON value of the specified type
  */
@@ -327,66 +321,6 @@ int json_object_put(json_object *obj) {
 
   free_json_value(obj);
   return 1;
-}
-
-json_tokener *json_tokener_new(void) {
-  json_tokener *tok = (json_tokener *)calloc(1, sizeof(*tok));
-  return tok;
-}
-
-void json_tokener_free(json_tokener *tok) {
-  if (!tok) {
-    return;
-  }
-
-  free(tok->buffer);
-  free(tok);
-}
-
-json_object *json_tokener_parse_ex(json_tokener *tok, const char *str, int len) {
-  char *new_buf = NULL;
-  JsonValue *value = NULL;
-
-  if (!tok || !str || len < 0) {
-    return NULL;
-  }
-
-  if (len == 0) {
-    return NULL;
-  }
-
-  if ((size_t)len > SIZE_MAX - tok->len - 1) {
-    return NULL;
-  }
-
-  if (tok->len + (size_t)len + 1 > tok->cap) {
-    size_t new_cap = tok->cap ? tok->cap : 256;
-    while (new_cap < tok->len + (size_t)len + 1) {
-      if (new_cap > SIZE_MAX / 2) {
-        return NULL;
-      }
-      new_cap *= 2;
-    }
-
-    new_buf = (char *)realloc(tok->buffer, new_cap);
-    if (!new_buf) {
-      return NULL;
-    }
-
-    tok->buffer = new_buf;
-    tok->cap = new_cap;
-  }
-
-  memcpy(tok->buffer + tok->len, str, (size_t)len);
-  tok->len += (size_t)len;
-  tok->buffer[tok->len] = '\0';
-
-  value = parse_json_string(tok->buffer);
-  if (!value) {
-    return NULL;
-  }
-
-  return value;
 }
 
 /**

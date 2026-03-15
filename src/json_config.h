@@ -28,6 +28,13 @@ typedef struct JsonValue JsonValue;
 typedef JsonValue json_object;
 typedef struct json_tokener json_tokener;
 
+typedef enum json_tokener_error {
+  json_tokener_success = 0,
+  json_tokener_continue,
+  json_tokener_error_parse,
+  json_tokener_error_memory
+} json_tokener_error;
+
 typedef enum json_type {
   json_type_null,
   json_type_boolean,
@@ -107,6 +114,9 @@ JsonValue *parse_json_string(const char *json_str);
 json_tokener *json_tokener_new(void);
 void json_tokener_free(json_tokener *tok);
 json_object *json_tokener_parse_ex(json_tokener *tok, const char *str, int len);
+enum json_tokener_error json_tokener_get_error(const json_tokener *tok);
+const char *json_tokener_error_desc(enum json_tokener_error err);
+void json_tokener_reset(json_tokener *tok);
 
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
