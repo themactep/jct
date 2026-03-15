@@ -3,6 +3,7 @@
  */
 
 #include "json_config.h"
+#include <stdbool.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -23,6 +24,10 @@ static JsonValue *parse_value(JsonParser *parser);
 static JsonValue *parse_array(JsonParser *parser);
 static JsonValue *parse_object(JsonParser *parser);
 static JsonValue *parse_number(JsonParser *parser);
+static int hex_digit_value(char c);
+static bool parse_unicode_code_unit(JsonParser *parser, unsigned int *codepoint);
+static bool parse_unicode_escape(JsonParser *parser, unsigned int *codepoint);
+static bool append_utf8(char *str, size_t *len, unsigned int codepoint);
 
 // Function to skip whitespace
 static void skip_whitespace(JsonParser *parser) {
@@ -34,6 +39,108 @@ static void skip_whitespace(JsonParser *parser) {
   }
 }
 
+static int hex_digit_value(char c) {
+  if (c >= '0' && c <= '9') {
+    return c - '0';
+  }
+
+  if (c >= 'a' && c <= 'f') {
+    return 10 + (c - 'a');
+  }
+
+  if (c >= 'A' && c <= 'F') {
+    return 10 + (c - 'A');
+  }
+
+  return -1;
+}
+
+static bool append_utf8(char *str, size_t *len, unsigned int codepoint) {
+  if (codepoint <= 0x7F) {
+    str[(*len)++] = (char)codepoint;
+    return true;
+  }
+
+  if (codepoint <= 0x7FF) {
+    str[(*len)++] = (char)(0xC0 | (codepoint >> 6));
+    str[(*len)++] = (char)(0x80 | (codepoint & 0x3F));
+    return true;
+  }
+
+  if (codepoint <= 0xFFFF) {
+    str[(*len)++] = (char)(0xE0 | (codepoint >> 12));
+    str[(*len)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+    str[(*len)++] = (char)(0x80 | (codepoint & 0x3F));
+    return true;
+  }
+
+  if (codepoint <= 0x10FFFF) {
+    str[(*len)++] = (char)(0xF0 | (codepoint >> 18));
+    str[(*len)++] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+    str[(*len)++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+    str[(*len)++] = (char)(0x80 | (codepoint & 0x3F));
+    return true;
+  }
+
+  return false;
+}
+
+static bool parse_unicode_code_unit(JsonParser *parser, unsigned int *codepoint) {
+  unsigned int cp = 0;
+
+  if (parser->pos >= parser->len || parser->json[parser->pos] != 'u') {
+    return false;
+  }
+
+  if (parser->pos + 4 >= parser->len) {
+    return false;
+  }
+
+  for (size_t i = 1; i <= 4; i++) {
+    int value = hex_digit_value(parser->json[parser->pos + i]);
+    if (value < 0) {
+      return false;
+    }
+
+    cp = (cp << 4) | (unsigned int)value;
+  }
+
+  parser->pos += 5;
+  *codepoint = cp;
+  return true;
+}
+
+static bool parse_unicode_escape(JsonParser *parser, unsigned int *codepoint) {
+  unsigned int cp = 0;
+  unsigned int low = 0;
+
+  if (!parse_unicode_code_unit(parser, &cp)) {
+    return false;
+  }
+
+  if (cp >= 0xD800 && cp <= 0xDBFF) {
+    unsigned int high = cp;
+
+    if (parser->pos + 1 >= parser->len || parser->json[parser->pos] != '\\' ||
+        parser->json[parser->pos + 1] != 'u') {
+      return false;
+    }
+
+    parser->pos++;
+    if (!parse_unicode_code_unit(parser, &low) || low < 0xDC00 ||
+        low > 0xDFFF) {
+      return false;
+    }
+
+    cp = 0x10000 + (((high - 0xD800) << 10) | (low - 0xDC00));
+  } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+    return false;
+  }
+
+  *codepoint = cp;
+  return true;
+}
+
 // Function to parse a JSON string
 static char *parse_string(JsonParser *parser) {
   if (parser->pos >= parser->len || parser->json[parser->pos] != '"') {
@@ -42,93 +149,94 @@ static char *parse_string(JsonParser *parser) {
 
   parser->pos++; // Skip opening quote
 
-  // Find the closing quote and count actual characters needed
-  int escaped = 0;
-  size_t actual_len = 0;
-
-  // First pass: find the end and count unescaped length
-  size_t temp_pos = parser->pos;
-  while (temp_pos < parser->len) {
-    char c = parser->json[temp_pos];
-
-    if (escaped) {
-      escaped = 0;
-      actual_len++; // Each escape sequence becomes one character
-    } else if (c == '\\') {
-      escaped = 1;
-    } else if (c == '"') {
-      break;
-    } else {
-      actual_len++;
-    }
-
-    temp_pos++;
-  }
-
-  if (temp_pos >= parser->len) {
-    return NULL; // Unterminated string
-  }
-
-  // Allocate memory for the unescaped string
-  char *str = (char *)malloc(actual_len + 1);
+  /*
+   * The decoded string can never be longer than the remaining byte count in
+   * the input, so allocate that upper bound and shrink before returning.
+   */
+  char *str = (char *)malloc((parser->len - parser->pos) + 1);
   if (!str) {
     return NULL;
   }
 
-  // Second pass: copy and unescape the string
   size_t j = 0;
-  escaped = 0;
   while (parser->pos < parser->len) {
-    char c = parser->json[parser->pos];
+    unsigned char c = (unsigned char)parser->json[parser->pos];
 
-    if (escaped) {
-      // Handle escape sequences
+    if (c == '"') {
+      parser->pos++;
+      str[j] = '\0';
+
+      char *shrunk = (char *)realloc(str, j + 1);
+      return shrunk ? shrunk : str;
+    }
+
+    if (c == '\\') {
+      unsigned int codepoint;
+
+      parser->pos++;
+      if (parser->pos >= parser->len) {
+        free(str);
+        return NULL;
+      }
+
+      c = (unsigned char)parser->json[parser->pos];
       switch (c) {
       case '"':
         str[j++] = '"';
-        break;
+        parser->pos++;
+        continue;
       case '\\':
         str[j++] = '\\';
-        break;
-      case 'b':
-        str[j++] = '\b';
-        break;
-      case 'f':
-        str[j++] = '\f';
-        break;
-      case 'n':
-        str[j++] = '\n';
-        break;
-      case 'r':
-        str[j++] = '\r';
-        break;
-      case 't':
-        str[j++] = '\t';
-        break;
+        parser->pos++;
+        continue;
       case '/':
         str[j++] = '/';
-        break;
+        parser->pos++;
+        continue;
+      case 'b':
+        str[j++] = '\b';
+        parser->pos++;
+        continue;
+      case 'f':
+        str[j++] = '\f';
+        parser->pos++;
+        continue;
+      case 'n':
+        str[j++] = '\n';
+        parser->pos++;
+        continue;
+      case 'r':
+        str[j++] = '\r';
+        parser->pos++;
+        continue;
+      case 't':
+        str[j++] = '\t';
+        parser->pos++;
+        continue;
+      case 'u':
+        if (!parse_unicode_escape(parser, &codepoint) ||
+            !append_utf8(str, &j, codepoint)) {
+          free(str);
+          return NULL;
+        }
+        continue;
       default:
-        // For unrecognized escape sequences, keep the character as-is
-        str[j++] = c;
-        break;
+        free(str);
+        return NULL;
       }
-      escaped = 0;
-    } else if (c == '\\') {
-      escaped = 1;
-    } else if (c == '"') {
-      break;
-    } else {
-      str[j++] = c;
     }
 
+    if (c < 0x20) {
+      free(str);
+      return NULL;
+    }
+
+    str[j++] = (char)c;
     parser->pos++;
   }
 
-  parser->pos++; // Skip closing quote
-  str[j] = '\0';
-
-  return str;
+  free(str);
+  return NULL;
 }
 
 // Function to parse a JSON array
@@ -437,7 +545,9 @@ JsonValue *parse_json_string(const char *json_str) {
   // Check if the entire string was parsed
   skip_whitespace(&parser);
   if (parser.pos < parser.len) {
-    fprintf(stderr, "Warning: Extra characters found after JSON data\n");
+    fprintf(stderr, "Error: Extra characters found after JSON data\n");
+    free_json_value(result);
+    return NULL;
   }
 
   return result;

@@ -38,6 +38,22 @@ run_test() {
     fi
 }
 
+run_expect_failure() {
+    local test_name="$1"
+    shift
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+
+    if "$@" >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} $test_name"
+        echo -e "  Expected command to fail"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    else
+        echo -e "${GREEN}✓${NC} $test_name"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+}
+
 echo -e "${BLUE}=== JSON Escape Sequence Test Suite ===${NC}"
 echo
 
@@ -143,6 +159,37 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 echo
 
+# Test 7: Unicode escape handling
+echo -e "${BLUE}Test 7: Unicode escape handling${NC}"
+rm -f "$TEST_FILE"
+printf '{"ascii":"\\u0041","accent":"\\u00E9","pair":"\\uD83D\\uDE00"}\n' > "$TEST_FILE"
+EXPECTED_ACCENT=$(printf '\303\251')
+EXPECTED_PAIR=$(printf '\360\237\230\200')
+run_test "Unicode escape decodes ASCII" "A" "$(./jct "$TEST_FILE" get ascii 2>/dev/null)"
+run_test "Unicode escape decodes BMP codepoint" "$EXPECTED_ACCENT" "$(./jct "$TEST_FILE" get accent 2>/dev/null)"
+run_test "Unicode surrogate pair decodes UTF-8" "$EXPECTED_PAIR" "$(./jct "$TEST_FILE" get pair 2>/dev/null)"
+echo
+
+# Test 8: Invalid JSON should be rejected
+echo -e "${BLUE}Test 8: Invalid JSON rejection${NC}"
+rm -f "$TEST_FILE"
+printf '{"bad":"\\x"}\n' > "$TEST_FILE"
+run_expect_failure "Reject invalid escape sequence" ./jct "$TEST_FILE" get bad
+
+printf '{"bad":"\\u12G4"}\n' > "$TEST_FILE"
+run_expect_failure "Reject invalid unicode hex digit" ./jct "$TEST_FILE" get bad
+
+printf '{"bad":"\\uD83D"}\n' > "$TEST_FILE"
+run_expect_failure "Reject missing surrogate pair tail" ./jct "$TEST_FILE" get bad
+
+printf '{"bad":"line1
+line2"}\n' > "$TEST_FILE"
+run_expect_failure "Reject raw newline inside string" ./jct "$TEST_FILE" get bad
+
+printf '{"ok":true} trailing\n' > "$TEST_FILE"
+run_expect_failure "Reject trailing non-whitespace data" ./jct "$TEST_FILE" get ok
+echo
+
 # Clean up
 rm -f "$TEST_FILE"
 
@@ -161,4 +208,3 @@ else
     echo
     echo -e "${GREEN}✓ Escape sequence handling is working correctly${NC}"
 fi
-
