@@ -405,10 +405,11 @@ static JsonValue *make_bool(int b) {
 }
 
 static JsonValue *make_number(double d) {
-  JsonValue *v = create_json_value(JSON_NUMBER);
-  if (v)
-    v->value.number = d;
-  return v;
+  return create_json_double_value(d);
+}
+
+static JsonValue *make_integer(int64_t i) {
+  return create_json_integer_value(i);
 }
 
 static JsonValue *make_string_lit(const char *s) {
@@ -446,9 +447,12 @@ static JsonValue *parse_literal(Scan *sc) {
     sc->pos++;
   }
   if (isdigit((unsigned char)peek(sc))) {
+    int64_t int_val = 0;
     double val = 0;
     while (!at_end(sc) && isdigit((unsigned char)peek(sc))) {
-      val = val * 10 + (getc_(sc) - '0');
+      int digit = getc_(sc) - '0';
+      int_val = int_val * 10 + digit;
+      val = val * 10 + digit;
     }
     if (peek(sc) == '.') {
       sc->pos++;
@@ -458,8 +462,9 @@ static JsonValue *parse_literal(Scan *sc) {
         base *= 10;
       }
       val += frac / base;
+      return make_number(sign * val);
     }
-    JsonValue *v = make_number(sign * val);
+    JsonValue *v = make_integer(sign * int_val);
     return v;
   }
   sc->pos = pos0;
@@ -542,7 +547,14 @@ static int strcmp_null(const char *a, const char *b) {
 
 static int cmp_values(JsonValue *a, JsonValue *b, const char *op) {
   if (a->type == JSON_NUMBER && b->type == JSON_NUMBER) {
-    int c = numcmp(a->value.number, b->value.number);
+    int c;
+    if (json_number_is_integer(a) && json_number_is_integer(b)) {
+      int64_t ai = json_number_get_integer(a);
+      int64_t bi = json_number_get_integer(b);
+      c = (ai < bi) ? -1 : (ai > bi ? 1 : 0);
+    } else {
+      c = numcmp(json_number_get_double(a), json_number_get_double(b));
+    }
     if (strcmp(op, "==") == 0)
       return c == 0;
     if (strcmp(op, "!=") == 0)

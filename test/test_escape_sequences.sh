@@ -190,6 +190,15 @@ printf '{"ok":true} trailing\n' > "$TEST_FILE"
 run_expect_failure "Reject trailing non-whitespace data" ./jct "$TEST_FILE" get ok
 echo
 
+# Test 9: Exact integer preservation
+echo -e "${BLUE}Test 9: Exact integer preservation${NC}"
+rm -f "$TEST_FILE"
+printf '{"big":9007199254740993,"neg":-9223372036854775807,"frac":1.5}\n' > "$TEST_FILE"
+run_test "Large integer prints exactly" "9007199254740993" "$(./jct "$TEST_FILE" get big 2>/dev/null)"
+run_test "Negative int64 prints exactly" "-9223372036854775807" "$(./jct "$TEST_FILE" get neg 2>/dev/null)"
+run_test "Fraction remains fractional" "1.5" "$(./jct "$TEST_FILE" get frac 2>/dev/null)"
+echo
+
 # Clean up
 rm -f "$TEST_FILE"
 

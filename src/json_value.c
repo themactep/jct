@@ -22,6 +22,30 @@ JsonValue *create_json_value(JsonType type) {
   return value;
 }
 
+JsonValue *create_json_integer_value(int64_t integer) {
+  JsonValue *value = create_json_value(JSON_NUMBER);
+  if (!value) {
+    return NULL;
+  }
+
+  value->value.number.kind = JSON_NUMBER_INT;
+  value->value.number.integer = integer;
+  value->value.number.real = (double)integer;
+  return value;
+}
+
+JsonValue *create_json_double_value(double real) {
+  JsonValue *value = create_json_value(JSON_NUMBER);
+  if (!value) {
+    return NULL;
+  }
+
+  value->value.number.kind = JSON_NUMBER_DOUBLE;
+  value->value.number.real = real;
+  value->value.number.integer = 0;
+  return value;
+}
+
 /**
  * Frees a JSON value and all its children
  */
@@ -115,6 +139,35 @@ JsonValue *clone_json_value(const JsonValue *value) {
   }
   }
   return out;
+}
+
+bool json_number_is_integer(const JsonValue *value) {
+  return value && value->type == JSON_NUMBER &&
+         value->value.number.kind == JSON_NUMBER_INT;
+}
+
+int64_t json_number_get_integer(const JsonValue *value) {
+  if (!value || value->type != JSON_NUMBER) {
+    return 0;
+  }
+
+  if (value->value.number.kind == JSON_NUMBER_INT) {
+    return value->value.number.integer;
+  }
+
+  return (int64_t)value->value.number.real;
+}
+
+double json_number_get_double(const JsonValue *value) {
+  if (!value || value->type != JSON_NUMBER) {
+    return 0.0;
+  }
+
+  if (value->value.number.kind == JSON_NUMBER_INT) {
+    return (double)value->value.number.integer;
+  }
+
+  return value->value.number.real;
 }
 
 /**

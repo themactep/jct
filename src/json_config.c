@@ -95,11 +95,10 @@ static int write_json_to_file(FILE *file, JsonValue *json, int indent) {
     success = (fprintf(file, "%s", json->value.boolean ? "true" : "false") > 0);
     break;
   case JSON_NUMBER:
-    // Check if it's an integer
-    if (json->value.number == (int64_t)json->value.number) {
-      success = (fprintf(file, "%" PRId64, (int64_t)json->value.number) > 0);
+    if (json_number_is_integer(json)) {
+      success = (fprintf(file, "%" PRId64, json_number_get_integer(json)) > 0);
     } else {
-      success = (fprintf(file, "%g", json->value.number) > 0);
+      success = (fprintf(file, "%g", json_number_get_double(json)) > 0);
     }
     break;
   case JSON_STRING:
@@ -538,7 +537,10 @@ static int json_values_equal(const JsonValue *a, const JsonValue *b) {
   case JSON_BOOL:
     return a->value.boolean == b->value.boolean;
   case JSON_NUMBER:
-    return a->value.number == b->value.number;
+    if (json_number_is_integer(a) && json_number_is_integer(b)) {
+      return json_number_get_integer(a) == json_number_get_integer(b);
+    }
+    return json_number_get_double(a) == json_number_get_double(b);
   case JSON_STRING:
     if (!a->value.string && !b->value.string) {
       return 1;
@@ -820,18 +822,24 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
   } else if (strcmp(value_str, "null") == 0) {
     new_value = create_json_value(JSON_NULL);
   } else {
-    // Try to parse as number (but not if it's an empty string)
     char *endptr;
-    double num = strtod(value_str, &endptr);
-    if (*endptr == '\0' &&
-        *value_str != '\0') { // Successfully parsed as a number and not empty
-      new_value = create_json_value(JSON_NUMBER);
-      if (new_value)
-        new_value->value.number = num;
+    int64_t integer = 0;
+    double num = 0.0;
+
+    errno = 0;
+    integer = strtoll(value_str, &endptr, 10);
+    if (*value_str != '\0' && *endptr == '\0' && errno != ERANGE) {
+      new_value = create_json_integer_value(integer);
     } else { // Treat as string
-      new_value = create_json_value(JSON_STRING);
-      if (new_value)
-        new_value->value.string = strdup(value_str);
+      errno = 0;
+      num = strtod(value_str, &endptr);
+      if (*value_str != '\0' && *endptr == '\0' && errno != ERANGE) {
+        new_value = create_json_double_value(num);
+      } else {
+        new_value = create_json_value(JSON_STRING);
+        if (new_value)
+          new_value->value.string = strdup(value_str);
+      }
     }
   }
 
@@ -968,11 +976,10 @@ static void print_json_value(JsonValue *item, int indent) {
     printf("%s", item->value.boolean ? "true" : "false");
     break;
   case JSON_NUMBER:
-    // Check if it's an integer
-    if (item->value.number == (int64_t)item->value.number) {
-      printf("%" PRId64, (int64_t)item->value.number);
+    if (json_number_is_integer(item)) {
+      printf("%" PRId64, json_number_get_integer(item));
     } else {
-      printf("%g", item->value.number);
+      printf("%g", json_number_get_double(item));
     }
     break;
   case JSON_STRING:
@@ -1103,12 +1110,10 @@ void print_item(JsonValue *item) {
 
   // Special case for printing a single number value
   if (item->type == JSON_NUMBER) {
-    // Check if it's an integer
-    if (item->value.number == (int64_t)item->value.number) {
-      int64_t int_value = (int64_t)item->value.number;
-      printf("%" PRId64 "\n", int_value);
+    if (json_number_is_integer(item)) {
+      printf("%" PRId64 "\n", json_number_get_integer(item));
     } else {
-      printf("%g\n", item->value.number);
+      printf("%g\n", json_number_get_double(item));
     }
     return;
   }

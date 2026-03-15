@@ -4,34 +4,11 @@
 
 #include "json_config.h"
 #include <ctype.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <float.h>
-
-static int is_exact_int64_double(double d, long long *out_ll) {
-  // NaN
-  if (!(d == d))
-    return 0;
-  // +/- infinity
-  if (d > DBL_MAX || d < -DBL_MAX)
-    return 0;
-  // Within int64 range
-  if (d < (double)LLONG_MIN || d > (double)LLONG_MAX)
-    return 0;
-  // Within precise integer range of IEEE-754 double (2^53-1)
-  double ad = d < 0 ? -d : d;
-  if (ad > 9007199254740991.0)
-    return 0;
-  long long ll = (long long)d;
-  if ((double)ll != d)
-    return 0;
-  if (out_ll)
-    *out_ll = ll;
-  return 1;
-}
+#include <inttypes.h>
+#include <limits.h>
 
 // Function prototypes for internal use
 static char *escape_string(const char *str);
@@ -134,16 +111,16 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
     break;
   case JSON_NUMBER: {
     char buffer[128];
-    double d = json->value.number;
-    long long ll;
-    if (is_exact_int64_double(d, &ll)) {
-      int len = snprintf(buffer, sizeof(buffer), "%lld", ll);
+    if (json_number_is_integer(json)) {
+      int len = snprintf(buffer, sizeof(buffer), "%" PRId64,
+                         json_number_get_integer(json));
       if (len < 0 || len >= (int)sizeof(buffer))
         size = 32;
       else
         size = len;
     } else {
-      int len = snprintf(buffer, sizeof(buffer), "%g", d);
+      int len = snprintf(buffer, sizeof(buffer), "%g",
+                         json_number_get_double(json));
       if (len < 0 || len >= (int)sizeof(buffer))
         size = 16;
       else
@@ -330,12 +307,10 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
     }
     break;
   case JSON_NUMBER: {
-    double d = json->value.number;
-    long long ll;
-    if (is_exact_int64_double(d, &ll)) {
-      pos = snprintf(buffer, 128, "%lld", ll);
+    if (json_number_is_integer(json)) {
+      pos = snprintf(buffer, 128, "%" PRId64, json_number_get_integer(json));
     } else {
-      pos = snprintf(buffer, 128, "%g", d);
+      pos = snprintf(buffer, 128, "%g", json_number_get_double(json));
     }
     if (pos < 0 || pos >= 128) {
       strncpy(buffer, "0", 2);

@@ -376,64 +376,100 @@ static JsonValue *parse_object(JsonParser *parser) {
 
 // Function to parse a JSON number
 static JsonValue *parse_number(JsonParser *parser) {
+  bool has_fraction = false;
+  bool has_exponent = false;
+  bool overflow = false;
+  char *endptr = NULL;
+  JsonValue *value = NULL;
+  size_t token_start = parser->pos;
+
   if (parser->pos >= parser->len) {
     return NULL;
   }
 
-  // Check if it's a number
-  char c = parser->json[parser->pos];
-  if (!isdigit(c) && c != '-' && c != '+' && c != '.') {
+  if (parser->json[parser->pos] == '-') {
+    parser->pos++;
+    if (parser->pos >= parser->len) {
+      return NULL;
+    }
+  }
+
+  if (!isdigit((unsigned char)parser->json[parser->pos])) {
     return NULL;
   }
 
-  // Find the end of the number
-  size_t start = parser->pos;
-  int has_decimal = 0;
-  int has_exponent = 0;
-
-  while (parser->pos < parser->len) {
-    c = parser->json[parser->pos];
-
-    if (c == '.') {
-      if (has_decimal) {
-        break; // Multiple decimal points not allowed
-      }
-      has_decimal = 1;
-    } else if (c == 'e' || c == 'E') {
-      if (has_exponent) {
-        break; // Multiple exponents not allowed
-      }
-      has_exponent = 1;
-    } else if (isdigit(c) || c == '-' || c == '+') {
-      // Valid number character
-    } else {
-      break; // End of number
-    }
-
+  if (parser->json[parser->pos] == '0') {
     parser->pos++;
+  } else {
+    while (parser->pos < parser->len &&
+           isdigit((unsigned char)parser->json[parser->pos])) {
+      parser->pos++;
+    }
   }
 
-  // Extract the number string
-  size_t len = parser->pos - start;
+  if (parser->pos < parser->len && parser->json[parser->pos] == '.') {
+    has_fraction = true;
+    parser->pos++;
+    if (parser->pos >= parser->len ||
+        !isdigit((unsigned char)parser->json[parser->pos])) {
+      return NULL;
+    }
+
+    while (parser->pos < parser->len &&
+           isdigit((unsigned char)parser->json[parser->pos])) {
+      parser->pos++;
+    }
+  }
+
+  if (parser->pos < parser->len &&
+      (parser->json[parser->pos] == 'e' || parser->json[parser->pos] == 'E')) {
+    has_exponent = true;
+    parser->pos++;
+    if (parser->pos < parser->len &&
+        (parser->json[parser->pos] == '+' || parser->json[parser->pos] == '-')) {
+      parser->pos++;
+    }
+    if (parser->pos >= parser->len ||
+        !isdigit((unsigned char)parser->json[parser->pos])) {
+      return NULL;
+    }
+
+    while (parser->pos < parser->len &&
+           isdigit((unsigned char)parser->json[parser->pos])) {
+      parser->pos++;
+    }
+  }
+
+  size_t len = parser->pos - token_start;
+
   char *num_str = (char *)malloc(len + 1);
   if (!num_str) {
     return NULL;
   }
 
-  memcpy(num_str, parser->json + start, len);
+  memcpy(num_str, parser->json + token_start, len);
   num_str[len] = '\0';
 
-  // Convert to number
-  double num = strtod(num_str, NULL);
-  free(num_str);
-
-  // Create JSON number value
-  JsonValue *value = create_json_value(JSON_NUMBER);
-  if (!value) {
-    return NULL;
+  if (!has_fraction && !has_exponent) {
+    errno = 0;
+    int64_t integer = strtoll(num_str, &endptr, 10);
+    if (errno == ERANGE) {
+      overflow = true;
+    } else if (endptr && *endptr == '\0') {
+      free(num_str);
+      return create_json_integer_value(integer);
+    }
   }
 
-  value->value.number = num;
+  errno = 0;
+  double num = strtod(num_str, &endptr);
+  if ((errno == ERANGE && overflow) || !endptr || *endptr != '\0') {
+    free(num_str);
+    return NULL;
+  }
+  free(num_str);
+
+  value = create_json_double_value(num);
   return value;
 }
 

@@ -5,7 +5,9 @@
 #ifndef JSON_CONFIG_H
 #define JSON_CONFIG_H
 
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,6 +25,17 @@ typedef enum {
 
 // Forward declaration for JsonValue
 typedef struct JsonValue JsonValue;
+
+typedef enum {
+  JSON_NUMBER_INT,
+  JSON_NUMBER_DOUBLE
+} JsonNumberKind;
+
+typedef struct JsonNumberValue {
+  JsonNumberKind kind;
+  int64_t integer;
+  double real;
+} JsonNumberValue;
 
 // Structure for key-value pairs in objects
 typedef struct JsonKeyValue {
@@ -42,7 +55,7 @@ struct JsonValue {
   JsonType type;
   union {
     int boolean;
-    double number;
+    JsonNumberValue number;
     char *string;
     JsonArrayItem *array_head;
     JsonKeyValue *object_head;
@@ -51,12 +64,17 @@ struct JsonValue {
 
 // JSON value functions
 JsonValue *create_json_value(JsonType type);
+JsonValue *create_json_integer_value(int64_t integer);
+JsonValue *create_json_double_value(double real);
 void free_json_value(JsonValue *value);
 int add_to_object(JsonValue *object, const char *key, JsonValue *value);
 int add_to_array(JsonValue *array, JsonValue *value);
 JsonValue *get_array_item(JsonValue *array, int index);
 int get_array_size(JsonValue *array);
 JsonValue *get_object_item(JsonValue *object, const char *key);
+bool json_number_is_integer(const JsonValue *value);
+int64_t json_number_get_integer(const JsonValue *value);
+double json_number_get_double(const JsonValue *value);
 
 // JSON parsing functions
 JsonValue *parse_json_file(const char *filepath);
