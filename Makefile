@@ -97,6 +97,7 @@ install: $(TARGET_LIB_SHARED) $(TARGET_LIB_STATIC)
 	install -m 644 $(TARGET_LIB_STATIC) $(DESTDIR)/usr/lib/
 	install -m 755 $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/
 	install -m 644 $(SRC_DIR)/json_config.h $(DESTDIR)/usr/include/
+	install -m 644 $(SRC_DIR)/json.h $(DESTDIR)/usr/include/
 	ln -sf $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/$(SONAME)
 
 # Test target
