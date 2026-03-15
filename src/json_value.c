@@ -91,6 +91,7 @@ void free_json_value(JsonValue *value) {
     break;
   }
 
+  free(value->array_view);
   free(value);
 }
 
@@ -321,6 +322,41 @@ int json_object_put(json_object *obj) {
 
   free_json_value(obj);
   return 1;
+}
+
+struct array_list *json_object_get_array(const json_object *obj) {
+  json_object *array = (json_object *)obj;
+
+  if (!array || array->type != JSON_ARRAY) {
+    return NULL;
+  }
+
+  if (!array->array_view) {
+    array->array_view = (struct array_list *)malloc(sizeof(*array->array_view));
+    if (!array->array_view) {
+      return NULL;
+    }
+
+    array->array_view->array = array;
+  }
+
+  return array->array_view;
+}
+
+int array_list_length(struct array_list *arr) {
+  if (!arr || !arr->array) {
+    return 0;
+  }
+
+  return get_array_size(arr->array);
+}
+
+json_object *array_list_get_idx(struct array_list *arr, int idx) {
+  if (!arr || !arr->array) {
+    return NULL;
+  }
+
+  return get_array_item(arr->array, idx);
 }
 
 /**

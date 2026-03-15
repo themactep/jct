@@ -27,6 +27,7 @@ typedef enum {
 typedef struct JsonValue JsonValue;
 typedef JsonValue json_object;
 typedef struct json_tokener json_tokener;
+struct array_list;
 
 typedef enum json_tokener_error {
   json_tokener_success = 0,
@@ -80,6 +81,11 @@ struct JsonValue {
     JsonArrayItem *array_head;
     JsonKeyValue *object_head;
   } value;
+  struct array_list *array_view;
+};
+
+struct array_list {
+  json_object *array;
 };
 
 // JSON value functions
@@ -106,6 +112,17 @@ int64_t json_object_get_int64(const json_object *obj);
 double json_object_get_double(const json_object *obj);
 json_object *json_object_get(json_object *obj);
 int json_object_put(json_object *obj);
+struct array_list *json_object_get_array(const json_object *obj);
+int array_list_length(struct array_list *arr);
+json_object *array_list_get_idx(struct array_list *arr, int idx);
+
+#define json_object_object_foreach(obj, key, val)                               \
+  for (JsonKeyValue *_json_kv =                                                 \
+           ((obj) && (obj)->type == JSON_OBJECT) ? (obj)->value.object_head     \
+                                                : NULL;                         \
+       _json_kv != NULL; _json_kv = _json_kv->next)                             \
+    for (const char *key = _json_kv->key; key != NULL; key = NULL)              \
+      for (json_object *val = _json_kv->value; val != NULL; val = NULL)
 
 // JSON parsing functions
 JsonValue *parse_json_file(const char *filepath);
@@ -117,6 +134,8 @@ json_object *json_tokener_parse_ex(json_tokener *tok, const char *str, int len);
 enum json_tokener_error json_tokener_get_error(const json_tokener *tok);
 const char *json_tokener_error_desc(enum json_tokener_error err);
 void json_tokener_reset(json_tokener *tok);
+json_object *json_tokener_parse(const char *str);
+json_object *json_object_from_file(const char *filepath);
 
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);

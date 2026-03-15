@@ -1,7 +1,9 @@
 #include "json_config.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static int expect(int cond, const char *msg) {
   if (!cond) {
@@ -17,6 +19,11 @@ int main(void) {
   json_object *dup = NULL;
   json_object *value = NULL;
   json_object *scalar = NULL;
+  json_object *from_string = NULL;
+  json_object *from_file = NULL;
+  char path[] = "/tmp/jct-json-XXXXXX";
+  int fd = -1;
+  FILE *tmp = NULL;
   int ok = 1;
 
   ok &= expect(tok != NULL, "json_tokener_new succeeds");
@@ -56,6 +63,40 @@ int main(void) {
   ok &= expect(json_object_get_boolean(scalar) == 1,
                "reused tokener parses scalar values");
   ok &= expect(json_object_put(scalar) == 1, "scalar cleanup succeeds");
+
+  from_string = json_tokener_parse("{\"ok\":true}");
+  ok &= expect(from_string != NULL, "json_tokener_parse handles complete JSON");
+  ok &= expect(json_object_object_get_ex(from_string, "ok", &value),
+               "json_tokener_parse result can be queried");
+  ok &= expect(json_object_get_boolean(value) == 1,
+               "json_tokener_parse preserves booleans");
+  ok &= expect(json_object_put(from_string) == 1,
+               "json_tokener_parse result cleanup succeeds");
+
+  fd = mkstemp(path);
+  ok &= expect(fd >= 0, "mkstemp creates a temporary file");
+  if (fd >= 0) {
+    tmp = fdopen(fd, "w");
+    ok &= expect(tmp != NULL, "fdopen opens the temporary file");
+    if (tmp) {
+      ok &= expect(fputs("{\"from_file\":[1,2]}", tmp) >= 0,
+                   "test JSON is written to file");
+      ok &= expect(fclose(tmp) == 0, "temporary file closes cleanly");
+      tmp = NULL;
+    } else {
+      close(fd);
+    }
+  }
+
+  from_file = json_object_from_file(path);
+  ok &= expect(from_file != NULL, "json_object_from_file parses valid JSON");
+  ok &= expect(json_object_object_get_ex(from_file, "from_file", &value),
+               "json_object_from_file result can be queried");
+  ok &= expect(json_object_array_length(value) == 2,
+               "json_object_from_file preserves arrays");
+  ok &= expect(json_object_put(from_file) == 1,
+               "json_object_from_file result cleanup succeeds");
+  unlink(path);
 
   json_tokener_free(tok);
   return ok ? 0 : 1;

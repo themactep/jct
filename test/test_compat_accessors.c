@@ -18,6 +18,8 @@ int main(void) {
       "\"frac\":1.5,\"arr\":[1,2.5]}";
   json_object *root = parse_json_string(json);
   json_object *value = NULL;
+  struct array_list *arr = NULL;
+  int field_count = 0;
   int ok = 1;
 
   ok &= expect(root != NULL, "parse_json_string returns object");
@@ -54,12 +56,24 @@ int main(void) {
   ok &= expect(json_object_get_type(value) == json_type_array,
                "arr type is array");
   ok &= expect(json_object_array_length(value) == 2, "array length matches");
+  arr = json_object_get_array(value);
+  ok &= expect(arr != NULL, "json_object_get_array returns array_list");
+  ok &= expect(array_list_length(arr) == 2, "array_list_length matches");
 
   ok &= expect(json_object_get_int64(json_object_array_get_idx(value, 0)) == 1,
                "array index 0 integer matches");
   ok &= expect(fabs(json_object_get_double(json_object_array_get_idx(value, 1)) -
                     2.5) < 1e-12,
                "array index 1 double matches");
+  ok &= expect(json_object_get_int64(array_list_get_idx(arr, 0)) == 1,
+               "array_list_get_idx returns array values");
+
+  json_object_object_foreach(root, key, child) {
+    (void)key;
+    (void)child;
+    field_count++;
+  }
+  ok &= expect(field_count == 5, "object_foreach iterates all fields");
 
   free_json_value(root);
   return ok ? 0 : 1;

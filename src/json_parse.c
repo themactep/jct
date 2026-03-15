@@ -922,3 +922,71 @@ json_object *json_tokener_parse_ex(json_tokener *tok, const char *str, int len) 
   json_tokener_reset(tok);
   return value;
 }
+
+json_object *json_tokener_parse(const char *str) {
+  enum json_tokener_error error = json_tokener_success;
+
+  if (!str) {
+    return NULL;
+  }
+
+  return parse_json_buffer(str, strlen(str), &error);
+}
+
+json_object *json_object_from_file(const char *filepath) {
+  enum json_tokener_error error = json_tokener_success;
+  json_object *json = NULL;
+  char *buffer = NULL;
+  FILE *file = NULL;
+  long file_size = 0;
+  size_t read_size = 0;
+
+  if (!filepath) {
+    return NULL;
+  }
+
+  file = fopen(filepath, "r");
+  if (!file) {
+    return NULL;
+  }
+
+  if (fseek(file, 0, SEEK_END) != 0) {
+    fclose(file);
+    return NULL;
+  }
+
+  file_size = ftell(file);
+  if (file_size < 0 || file_size > 100 * 1024 * 1024) {
+    fclose(file);
+    return NULL;
+  }
+
+  if (fseek(file, 0, SEEK_SET) != 0) {
+    fclose(file);
+    return NULL;
+  }
+
+  buffer = (char *)malloc((size_t)file_size + 1);
+  if (!buffer) {
+    fclose(file);
+    return NULL;
+  }
+
+  read_size = fread(buffer, 1, (size_t)file_size, file);
+  fclose(file);
+  if (read_size != (size_t)file_size) {
+    free(buffer);
+    return NULL;
+  }
+
+  buffer[read_size] = '\0';
+  json = parse_json_buffer(buffer, read_size, &error);
+  free(buffer);
+
+  if (error != json_tokener_success) {
+    json_object_put(json);
+    return NULL;
+  }
+
+  return json;
+}
