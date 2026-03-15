@@ -82,6 +82,7 @@ struct JsonValue {
     JsonKeyValue *object_head;
   } value;
   struct array_list *array_view;
+  char *serialized_cache;
 };
 
 struct array_list {
@@ -102,6 +103,7 @@ bool json_number_is_integer(const JsonValue *value);
 int64_t json_number_get_integer(const JsonValue *value);
 double json_number_get_double(const JsonValue *value);
 enum json_type json_object_get_type(const json_object *obj);
+int json_object_is_type(const json_object *obj, enum json_type type);
 bool json_object_object_get_ex(const json_object *obj, const char *key,
                                json_object **value);
 size_t json_object_array_length(const json_object *obj);
@@ -112,6 +114,15 @@ int64_t json_object_get_int64(const json_object *obj);
 double json_object_get_double(const json_object *obj);
 json_object *json_object_get(json_object *obj);
 int json_object_put(json_object *obj);
+json_object *json_object_new_object(void);
+json_object *json_object_new_array(void);
+json_object *json_object_new_string(const char *value);
+json_object *json_object_new_int64(int64_t value);
+json_object *json_object_new_double(double value);
+json_object *json_object_new_boolean(int value);
+json_object *json_object_new_null(void);
+int json_object_object_add(json_object *obj, const char *key, json_object *val);
+int json_object_array_add(json_object *obj, json_object *val);
 struct array_list *json_object_get_array(const json_object *obj);
 int array_list_length(struct array_list *arr);
 json_object *array_list_get_idx(struct array_list *arr, int idx);
@@ -139,6 +150,7 @@ json_object *json_object_from_file(const char *filepath);
 
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
+const char *json_object_to_json_string(json_object *obj);
 
 // Deep clone a JSON value (recursively)
 JsonValue *clone_json_value(const JsonValue *value);
