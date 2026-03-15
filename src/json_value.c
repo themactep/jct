@@ -3,6 +3,7 @@
  */
 
 #include "json_config.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -168,6 +169,134 @@ double json_number_get_double(const JsonValue *value) {
   }
 
   return value->value.number.real;
+}
+
+enum json_type json_object_get_type(const json_object *obj) {
+  if (!obj) {
+    return json_type_null;
+  }
+
+  switch (obj->type) {
+  case JSON_NULL:
+    return json_type_null;
+  case JSON_BOOL:
+    return json_type_boolean;
+  case JSON_NUMBER:
+    return json_number_is_integer(obj) ? json_type_int : json_type_double;
+  case JSON_STRING:
+    return json_type_string;
+  case JSON_ARRAY:
+    return json_type_array;
+  case JSON_OBJECT:
+    return json_type_object;
+  }
+
+  return json_type_null;
+}
+
+bool json_object_object_get_ex(const json_object *obj, const char *key,
+                               json_object **value) {
+  json_object *found = NULL;
+
+  if (value) {
+    *value = NULL;
+  }
+
+  if (!obj || obj->type != JSON_OBJECT || !key) {
+    return false;
+  }
+
+  found = get_object_item((JsonValue *)obj, key);
+  if (!found) {
+    return false;
+  }
+
+  if (value) {
+    *value = found;
+  }
+
+  return true;
+}
+
+size_t json_object_array_length(const json_object *obj) {
+  if (!obj || obj->type != JSON_ARRAY) {
+    return 0;
+  }
+
+  return (size_t)get_array_size((JsonValue *)obj);
+}
+
+json_object *json_object_array_get_idx(const json_object *obj, size_t index) {
+  if (!obj || obj->type != JSON_ARRAY) {
+    return NULL;
+  }
+
+  if (index > (size_t)INT_MAX) {
+    return NULL;
+  }
+
+  return get_array_item((JsonValue *)obj, (int)index);
+}
+
+const char *json_object_get_string(const json_object *obj) {
+  if (!obj) {
+    return NULL;
+  }
+
+  if (obj->type == JSON_STRING) {
+    return obj->value.string;
+  }
+
+  return NULL;
+}
+
+int json_object_get_boolean(const json_object *obj) {
+  if (!obj) {
+    return 0;
+  }
+
+  switch (obj->type) {
+  case JSON_BOOL:
+    return obj->value.boolean != 0;
+  case JSON_NULL:
+    return 0;
+  case JSON_NUMBER:
+    if (json_number_is_integer(obj)) {
+      return json_number_get_integer(obj) != 0;
+    }
+    return json_number_get_double(obj) != 0.0;
+  case JSON_STRING:
+    return obj->value.string && obj->value.string[0] != '\0';
+  case JSON_ARRAY:
+  case JSON_OBJECT:
+    return 1;
+  }
+
+  return 0;
+}
+
+int64_t json_object_get_int64(const json_object *obj) {
+  if (!obj) {
+    return 0;
+  }
+
+  if (obj->type == JSON_NUMBER) {
+    return json_number_get_integer(obj);
+  }
+
+  return 0;
+}
+
+double json_object_get_double(const json_object *obj) {
+  if (!obj) {
+    return 0.0;
+  }
+
+  if (obj->type == JSON_NUMBER) {
+    return json_number_get_double(obj);
+  }
+
+  return 0.0;
 }
 
 /**

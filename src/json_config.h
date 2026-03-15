@@ -25,6 +25,17 @@ typedef enum {
 
 // Forward declaration for JsonValue
 typedef struct JsonValue JsonValue;
+typedef JsonValue json_object;
+
+typedef enum json_type {
+  json_type_null,
+  json_type_boolean,
+  json_type_double,
+  json_type_int,
+  json_type_object,
+  json_type_array,
+  json_type_string
+} json_type;
 
 typedef enum {
   JSON_NUMBER_INT,
@@ -75,6 +86,15 @@ JsonValue *get_object_item(JsonValue *object, const char *key);
 bool json_number_is_integer(const JsonValue *value);
 int64_t json_number_get_integer(const JsonValue *value);
 double json_number_get_double(const JsonValue *value);
+enum json_type json_object_get_type(const json_object *obj);
+bool json_object_object_get_ex(const json_object *obj, const char *key,
+                               json_object **value);
+size_t json_object_array_length(const json_object *obj);
+json_object *json_object_array_get_idx(const json_object *obj, size_t index);
+const char *json_object_get_string(const json_object *obj);
+int json_object_get_boolean(const json_object *obj);
+int64_t json_object_get_int64(const json_object *obj);
+double json_object_get_double(const json_object *obj);
 
 // JSON parsing functions
 JsonValue *parse_json_file(const char *filepath);
