@@ -23,9 +23,9 @@ typedef enum {
   JSON_OBJECT
 } JsonType;
 
-// Forward declaration for JsonValue
-typedef struct JsonValue JsonValue;
-typedef JsonValue json_object;
+// Forward declaration for JsonValue/json_object compatibility
+typedef struct json_object JsonValue;
+typedef struct json_object json_object;
 typedef struct json_tokener json_tokener;
 struct array_list;
 
@@ -71,7 +71,7 @@ typedef struct JsonArrayItem {
 } JsonArrayItem;
 
 // Structure for JSON values
-struct JsonValue {
+struct json_object {
   JsonType type;
   int refcount;
   union {

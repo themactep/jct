@@ -92,13 +92,19 @@ $(CLI_OBJECTS): $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 # Install target
 install: $(TARGET_LIB_SHARED) $(TARGET_LIB_STATIC)
 	@echo "Installing JCT library..."
-	install -d $(DESTDIR)/usr/bin $(DESTDIR)/usr/lib $(DESTDIR)/usr/include
+	install -d $(DESTDIR)/usr/bin $(DESTDIR)/usr/lib $(DESTDIR)/usr/include \
+		$(DESTDIR)/usr/lib/pkgconfig
 	install -m 755 $(TARGET_CLI) $(DESTDIR)/usr/bin/
 	install -m 644 $(TARGET_LIB_STATIC) $(DESTDIR)/usr/lib/
 	install -m 755 $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/
 	install -m 644 $(SRC_DIR)/json_config.h $(DESTDIR)/usr/include/
 	install -m 644 $(SRC_DIR)/json.h $(DESTDIR)/usr/include/
+	install -m 644 $(SRC_DIR)/json-c.pc $(DESTDIR)/usr/lib/pkgconfig/
 	ln -sf $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/$(SONAME)
+	ln -sf $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/libjson-c.so
+	ln -sf $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/libjson.so
+	ln -sf $(TARGET_LIB_STATIC) $(DESTDIR)/usr/lib/libjson-c.a
+	ln -sf $(TARGET_LIB_STATIC) $(DESTDIR)/usr/lib/libjson.a
 
 # Test target
 test: $(TARGET_CLI)
