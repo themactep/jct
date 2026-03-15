@@ -26,6 +26,7 @@ typedef enum {
 // Forward declaration for JsonValue
 typedef struct JsonValue JsonValue;
 typedef JsonValue json_object;
+typedef struct json_tokener json_tokener;
 
 typedef enum json_type {
   json_type_null,
@@ -64,6 +65,7 @@ typedef struct JsonArrayItem {
 // Structure for JSON values
 struct JsonValue {
   JsonType type;
+  int refcount;
   union {
     int boolean;
     JsonNumberValue number;
@@ -95,11 +97,16 @@ const char *json_object_get_string(const json_object *obj);
 int json_object_get_boolean(const json_object *obj);
 int64_t json_object_get_int64(const json_object *obj);
 double json_object_get_double(const json_object *obj);
+json_object *json_object_get(json_object *obj);
+int json_object_put(json_object *obj);
 
 // JSON parsing functions
 JsonValue *parse_json_file(const char *filepath);
 // Parse from a JSON string buffer
 JsonValue *parse_json_string(const char *json_str);
+json_tokener *json_tokener_new(void);
+void json_tokener_free(json_tokener *tok);
+json_object *json_tokener_parse_ex(json_tokener *tok, const char *str, int len);
 
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
