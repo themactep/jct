@@ -46,6 +46,9 @@ typedef enum json_type {
   json_type_string
 } json_type;
 
+#define JSON_C_TO_STRING_PLAIN 0
+#define JSON_C_TO_STRING_PRETTY (1 << 1)
+
 typedef enum {
   JSON_NUMBER_INT,
   JSON_NUMBER_DOUBLE
@@ -110,6 +113,7 @@ size_t json_object_array_length(const json_object *obj);
 json_object *json_object_array_get_idx(const json_object *obj, size_t index);
 const char *json_object_get_string(const json_object *obj);
 int json_object_get_boolean(const json_object *obj);
+int json_object_get_int(const json_object *obj);
 int64_t json_object_get_int64(const json_object *obj);
 double json_object_get_double(const json_object *obj);
 json_object *json_object_get(json_object *obj);
@@ -117,6 +121,7 @@ int json_object_put(json_object *obj);
 json_object *json_object_new_object(void);
 json_object *json_object_new_array(void);
 json_object *json_object_new_string(const char *value);
+json_object *json_object_new_int(int32_t value);
 json_object *json_object_new_int64(int64_t value);
 json_object *json_object_new_double(double value);
 json_object *json_object_new_boolean(int value);
@@ -151,6 +156,7 @@ json_object *json_object_from_file(const char *filepath);
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
 const char *json_object_to_json_string(json_object *obj);
+int json_object_to_file_ext(const char *filename, json_object *obj, int flags);
 
 // Deep clone a JSON value (recursively)
 JsonValue *clone_json_value(const JsonValue *value);

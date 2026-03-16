@@ -3,6 +3,7 @@
  */
 
 #include "json_config.h"
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -296,6 +297,50 @@ int json_object_get_boolean(const json_object *obj) {
   return 0;
 }
 
+int json_object_get_int(const json_object *obj) {
+  int64_t value = 0;
+
+  if (!obj) {
+    return 0;
+  }
+
+  switch (obj->type) {
+  case JSON_NUMBER:
+    value = json_number_get_integer(obj);
+    break;
+  case JSON_BOOL:
+    value = obj->value.boolean ? 1 : 0;
+    break;
+  case JSON_STRING: {
+    char *end = NULL;
+
+    if (!obj->value.string) {
+      return 0;
+    }
+
+    errno = 0;
+    value = strtoll(obj->value.string, &end, 10);
+    if (errno != 0 || end == obj->value.string) {
+      return 0;
+    }
+    break;
+  }
+  case JSON_NULL:
+  case JSON_ARRAY:
+  case JSON_OBJECT:
+    return 0;
+  }
+
+  if (value > INT_MAX) {
+    return INT_MAX;
+  }
+  if (value < INT_MIN) {
+    return INT_MIN;
+  }
+
+  return (int)value;
+}
+
 int64_t json_object_get_int64(const json_object *obj) {
   if (!obj) {
     return 0;
@@ -356,6 +401,10 @@ json_object *json_object_new_string(const char *value) {
   }
 
   return obj;
+}
+
+json_object *json_object_new_int(int32_t value) {
+  return create_json_integer_value(value);
 }
 
 json_object *json_object_new_int64(int64_t value) {

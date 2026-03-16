@@ -93,12 +93,13 @@ $(CLI_OBJECTS): $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 install: $(TARGET_LIB_SHARED) $(TARGET_LIB_STATIC)
 	@echo "Installing JCT library..."
 	install -d $(DESTDIR)/usr/bin $(DESTDIR)/usr/lib $(DESTDIR)/usr/include \
-		$(DESTDIR)/usr/lib/pkgconfig
+		$(DESTDIR)/usr/include/json-c $(DESTDIR)/usr/lib/pkgconfig
 	install -m 755 $(TARGET_CLI) $(DESTDIR)/usr/bin/
 	install -m 644 $(TARGET_LIB_STATIC) $(DESTDIR)/usr/lib/
 	install -m 755 $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/
 	install -m 644 $(SRC_DIR)/json_config.h $(DESTDIR)/usr/include/
 	install -m 644 $(SRC_DIR)/json.h $(DESTDIR)/usr/include/
+	install -m 644 $(SRC_DIR)/json-c/json.h $(DESTDIR)/usr/include/json-c/
 	install -m 644 $(SRC_DIR)/json-c.pc $(DESTDIR)/usr/lib/pkgconfig/
 	ln -sf $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/$(SONAME)
 	ln -sf $(TARGET_LIB_SHARED) $(DESTDIR)/usr/lib/libjson-c.so

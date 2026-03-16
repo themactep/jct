@@ -489,6 +489,39 @@ static int merge_object_into(JsonValue *dest_obj, const JsonValue *src_obj) {
   return 1;
 }
 
+int json_object_to_file_ext(const char *filename, json_object *obj, int flags) {
+  FILE *file = NULL;
+  char *serialized = NULL;
+  int pretty = (flags & JSON_C_TO_STRING_PRETTY) != 0;
+  int ok = -1;
+
+  if (!filename || !obj) {
+    return -1;
+  }
+
+  serialized = json_to_string(obj, pretty);
+  if (!serialized) {
+    return -1;
+  }
+
+  file = fopen(filename, "w");
+  if (!file) {
+    free(serialized);
+    return -1;
+  }
+
+  if (fputs(serialized, file) >= 0 && fputc('\n', file) != EOF && fclose(file) == 0) {
+    file = NULL;
+    ok = 0;
+  }
+
+  if (file) {
+    fclose(file);
+  }
+  free(serialized);
+  return ok;
+}
+
 int merge_json_into(JsonValue **dest_ptr, const JsonValue *src) {
   if (!dest_ptr || !src) {
     return 0;

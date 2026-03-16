@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static int expect(int cond, const char *msg) {
   if (!cond) {
@@ -16,6 +17,10 @@ int main(void) {
   json_object *array = json_object_new_array();
   json_object *value = NULL;
   const char *serialized = NULL;
+  char path[] = "/tmp/jct-json-compat-XXXXXX";
+  int fd = -1;
+  FILE *file = NULL;
+  char filebuf[256];
   int ok = 1;
 
   ok &= expect(root != NULL, "json_object_new_object succeeds");
@@ -28,6 +33,9 @@ int main(void) {
   ok &= expect(json_object_object_add(root, "enabled",
                                       json_object_new_boolean(1)) == 0,
                "json_object_object_add accepts booleans");
+  ok &= expect(json_object_object_add(root, "small",
+                                      json_object_new_int(7)) == 0,
+               "json_object_object_add accepts int");
   ok &= expect(json_object_object_add(root, "big",
                                       json_object_new_int64(9007199254740993LL)) == 0,
                "json_object_object_add accepts int64");
@@ -54,12 +62,34 @@ int main(void) {
                "serialized string contains name");
   ok &= expect(strstr(serialized, "\"enabled\":true") != NULL,
                "serialized string contains boolean");
+  ok &= expect(strstr(serialized, "\"small\":7") != NULL,
+               "serialized string contains int");
   ok &= expect(strstr(serialized, "\"big\":9007199254740993") != NULL,
                "serialized string preserves integer");
   ok &= expect(strstr(serialized, "\"values\":[2.5,null]") != NULL,
                "serialized string contains array and null");
   ok &= expect(strstr(serialized, "\"nothing\":null") != NULL,
                "serialized string contains object null");
+
+  fd = mkstemp(path);
+  ok &= expect(fd >= 0, "mkstemp creates output file");
+  if (fd >= 0) {
+    close(fd);
+  }
+  ok &= expect(json_object_to_file_ext(path, root, JSON_C_TO_STRING_PRETTY) == 0,
+               "json_object_to_file_ext writes pretty output");
+  file = fopen(path, "r");
+  ok &= expect(file != NULL, "written json file can be reopened");
+  if (file) {
+    size_t n = fread(filebuf, 1, sizeof(filebuf) - 1, file);
+    filebuf[n] = '\0';
+    fclose(file);
+    file = NULL;
+    ok &= expect(strstr(filebuf, "\n") != NULL, "pretty file contains newlines");
+    ok &= expect(strstr(filebuf, "\"small\": 7") != NULL,
+                 "pretty file contains formatted int");
+  }
+  unlink(path);
 
   ok &= expect(json_object_put(root) == 1, "json_object_put cleans up builders");
   return ok ? 0 : 1;

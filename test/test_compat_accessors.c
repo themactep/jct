@@ -1,5 +1,6 @@
 #include "json_config.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -41,6 +42,8 @@ int main(void) {
                "object_get_ex finds big");
   ok &= expect(json_object_get_type(value) == json_type_int,
                "big type is integer");
+  ok &= expect(json_object_get_int(value) == INT_MAX,
+               "get_int clamps large integers like json-c");
   ok &= expect(json_object_get_int64(value) == 9007199254740993LL,
                "big integer preserved exactly");
 
