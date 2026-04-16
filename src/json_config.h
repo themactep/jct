@@ -48,6 +48,7 @@ typedef enum json_type {
 
 #define JSON_C_TO_STRING_PLAIN 0
 #define JSON_C_TO_STRING_PRETTY (1 << 1)
+#define JSON_C_TO_STRING_NOSLASHESCAPE (1 << 4)
 
 typedef enum {
   JSON_NUMBER_INT,
@@ -127,6 +128,7 @@ json_object *json_object_new_double(double value);
 json_object *json_object_new_boolean(int value);
 json_object *json_object_new_null(void);
 int json_object_object_add(json_object *obj, const char *key, json_object *val);
+void json_object_object_del(json_object *obj, const char *key);
 int json_object_array_add(json_object *obj, json_object *val);
 struct array_list *json_object_get_array(const json_object *obj);
 int array_list_length(struct array_list *arr);
@@ -156,6 +158,7 @@ json_object *json_object_from_file(const char *filepath);
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
 const char *json_object_to_json_string(json_object *obj);
+const char *json_object_to_json_string_ext(json_object *obj, int flags);
 int json_object_to_file_ext(const char *filename, json_object *obj, int flags);
 
 // Deep clone a JSON value (recursively)

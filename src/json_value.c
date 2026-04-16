@@ -446,6 +446,26 @@ int json_object_object_add(json_object *obj, const char *key, json_object *val) 
   return 0;
 }
 
+void json_object_object_del(json_object *obj, const char *key) {
+  if (!obj || !key || obj->type != JSON_OBJECT) {
+    return;
+  }
+
+  JsonKeyValue **prev = &obj->value.object_head;
+  while (*prev) {
+    JsonKeyValue *kv = *prev;
+    if (strcmp(kv->key, key) == 0) {
+      *prev = kv->next;
+      free(kv->key);
+      free_json_value(kv->value);
+      free(kv);
+      invalidate_serialized_cache(obj);
+      return;
+    }
+    prev = &kv->next;
+  }
+}
+
 int json_object_array_add(json_object *obj, json_object *val) {
   json_object *stored = val ? val : json_object_new_null();
 
@@ -639,6 +659,24 @@ const char *json_object_to_json_string(json_object *obj) {
 
   invalidate_serialized_cache(obj);
   serialized = json_to_string(obj, 0);
+  if (!serialized) {
+    return NULL;
+  }
+
+  obj->serialized_cache = serialized;
+  return obj->serialized_cache;
+}
+
+const char *json_object_to_json_string_ext(json_object *obj, int flags) {
+  char *serialized = NULL;
+  int pretty = (flags & JSON_C_TO_STRING_PRETTY) ? 1 : 0;
+
+  if (!obj) {
+    return "null";
+  }
+
+  invalidate_serialized_cache(obj);
+  serialized = json_to_string(obj, pretty);
   if (!serialized) {
     return NULL;
   }
