@@ -47,7 +47,9 @@ typedef enum json_type {
 } json_type;
 
 #define JSON_C_TO_STRING_PLAIN 0
+#define JSON_C_TO_STRING_SPACED (1 << 0)
 #define JSON_C_TO_STRING_PRETTY (1 << 1)
+#define JSON_C_TO_STRING_PRETTY_TAB (1 << 3)
 #define JSON_C_TO_STRING_NOSLASHESCAPE (1 << 4)
 
 typedef enum {
@@ -157,6 +159,7 @@ json_object *json_object_from_file(const char *filepath);
 
 // JSON serialization functions
 char *json_to_string(JsonValue *json, int pretty);
+char *json_to_string_ext(JsonValue *json, int flags);
 const char *json_object_to_json_string(json_object *obj);
 const char *json_object_to_json_string_ext(json_object *obj, int flags);
 int json_object_to_file_ext(const char *filename, json_object *obj, int flags);

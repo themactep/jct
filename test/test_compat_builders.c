@@ -1,6 +1,7 @@
 #include "json_config.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -39,6 +40,10 @@ int main(void) {
   ok &= expect(json_object_object_add(root, "big",
                                       json_object_new_int64(9007199254740993LL)) == 0,
                "json_object_object_add accepts int64");
+  ok &= expect(
+      json_object_object_add(root, "url",
+                             json_object_new_string("https://example.com/live/stream")) == 0,
+      "json_object_object_add accepts slash-heavy strings");
   ok &= expect(json_object_array_add(array, json_object_new_double(2.5)) == 0,
                "json_object_array_add accepts doubles");
   ok &= expect(json_object_array_add(array, NULL) == 0,
@@ -66,10 +71,41 @@ int main(void) {
                "serialized string contains int");
   ok &= expect(strstr(serialized, "\"big\":9007199254740993") != NULL,
                "serialized string preserves integer");
+  ok &= expect(strstr(serialized, "\"url\":\"https:\\/\\/example.com\\/live\\/stream\"") !=
+                   NULL,
+               "plain serialization escapes forward slashes like json-c");
   ok &= expect(strstr(serialized, "\"values\":[2.5,null]") != NULL,
                "serialized string contains array and null");
   ok &= expect(strstr(serialized, "\"nothing\":null") != NULL,
                "serialized string contains object null");
+
+  serialized = json_object_to_json_string_ext(root, JSON_C_TO_STRING_SPACED);
+  ok &= expect(serialized != NULL, "json_object_to_json_string_ext spaced succeeds");
+  ok &= expect(strstr(serialized, "\"name\": \"cam\"") != NULL,
+               "spaced serialization adds spaces after colons");
+  ok &= expect(strstr(serialized, ", \"enabled\": true") != NULL,
+               "spaced serialization adds spaces after commas");
+
+  serialized =
+      json_object_to_json_string_ext(root, JSON_C_TO_STRING_NOSLASHESCAPE);
+  ok &= expect(serialized != NULL,
+               "json_object_to_json_string_ext no-slash-escape succeeds");
+  ok &= expect(strstr(serialized, "\"url\":\"https://example.com/live/stream\"") !=
+                   NULL,
+               "NOSLASHESCAPE preserves forward slashes");
+
+  serialized = json_object_to_json_string_ext(root, JSON_C_TO_STRING_PRETTY_TAB);
+  ok &= expect(serialized != NULL,
+               "json_object_to_json_string_ext pretty-tab succeeds");
+  ok &= expect(strstr(serialized, "\n\t\"name\": \"cam\"") != NULL,
+               "pretty-tab serialization indents with tabs");
+
+  json_object_object_del(root, "nothing");
+  ok &= expect(!json_object_object_get_ex(root, "nothing", &value),
+               "json_object_object_del removes an existing key");
+  serialized = json_object_to_json_string(root);
+  ok &= expect(strstr(serialized, "\"nothing\":null") == NULL,
+               "serialization cache is invalidated after deletion");
 
   fd = mkstemp(path);
   ok &= expect(fd >= 0, "mkstemp creates output file");

@@ -658,7 +658,7 @@ const char *json_object_to_json_string(json_object *obj) {
   }
 
   invalidate_serialized_cache(obj);
-  serialized = json_to_string(obj, 0);
+  serialized = json_to_string_ext(obj, JSON_C_TO_STRING_PLAIN);
   if (!serialized) {
     return NULL;
   }
@@ -669,14 +669,12 @@ const char *json_object_to_json_string(json_object *obj) {
 
 const char *json_object_to_json_string_ext(json_object *obj, int flags) {
   char *serialized = NULL;
-  int pretty = (flags & JSON_C_TO_STRING_PRETTY) ? 1 : 0;
-
   if (!obj) {
     return "null";
   }
 
   invalidate_serialized_cache(obj);
-  serialized = json_to_string(obj, pretty);
+  serialized = json_to_string_ext(obj, flags);
   if (!serialized) {
     return NULL;
   }

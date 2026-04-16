@@ -11,15 +11,35 @@
 #include <limits.h>
 
 // Function prototypes for internal use
-static char *escape_string(const char *str);
-static int calculate_json_size(JsonValue *json, int pretty, int level);
-static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
+static char *escape_string(const char *str, int flags);
+static int calculate_json_size(JsonValue *json, int flags, int level);
+static int serialize_json_to_buffer(JsonValue *json, char *buffer, int flags,
                                     int level);
+static int json_format_is_pretty(int flags);
+static int json_format_is_spaced(int flags);
+static int json_format_indent_width(int flags);
+static char json_format_indent_char(int flags);
 
 /**
  * Escapes a string for JSON output
  */
-static char *escape_string(const char *str) {
+static int json_format_is_pretty(int flags) {
+  return (flags & (JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_PRETTY_TAB)) != 0;
+}
+
+static int json_format_is_spaced(int flags) {
+  return json_format_is_pretty(flags) || (flags & JSON_C_TO_STRING_SPACED) != 0;
+}
+
+static int json_format_indent_width(int flags) {
+  return (flags & JSON_C_TO_STRING_PRETTY_TAB) ? 1 : 2;
+}
+
+static char json_format_indent_char(int flags) {
+  return (flags & JSON_C_TO_STRING_PRETTY_TAB) ? '\t' : ' ';
+}
+
+static char *escape_string(const char *str, int flags) {
   if (!str) {
     return NULL;
   }
@@ -31,7 +51,8 @@ static char *escape_string(const char *str) {
   for (size_t i = 0; i < len; i++) {
     char c = str[i];
     if (c == '"' || c == '\\' || c == '\b' || c == '\f' || c == '\n' ||
-        c == '\r' || c == '\t') {
+        c == '\r' || c == '\t' ||
+        (c == '/' && (flags & JSON_C_TO_STRING_NOSLASHESCAPE) == 0)) {
       escaped_len++;
     }
   }
@@ -55,6 +76,12 @@ static char *escape_string(const char *str) {
     case '\\':
       escaped[j++] = '\\';
       escaped[j++] = '\\';
+      break;
+    case '/':
+      if ((flags & JSON_C_TO_STRING_NOSLASHESCAPE) == 0) {
+        escaped[j++] = '\\';
+      }
+      escaped[j++] = '/';
       break;
     case '\b':
       escaped[j++] = '\\';
@@ -89,7 +116,7 @@ static char *escape_string(const char *str) {
 /**
  * Calculates the size needed for the JSON string
  */
-static int calculate_json_size(JsonValue *json, int pretty, int level) {
+static int calculate_json_size(JsonValue *json, int flags, int level) {
   if (!json) {
     return 4; // "null"
   }
@@ -101,6 +128,9 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
   }
 
   int size = 0;
+  int pretty = json_format_is_pretty(flags);
+  int spaced = json_format_is_spaced(flags);
+  int indent_width = json_format_indent_width(flags);
 
   switch (json->type) {
   case JSON_NULL:
@@ -132,7 +162,7 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
     if (!json->value.string) {
       size = 2; // Just quotes for NULL string
     } else {
-      char *escaped = escape_string(json->value.string);
+      char *escaped = escape_string(json->value.string, flags);
       if (escaped) {
         size_t escaped_len = strlen(escaped);
         if (escaped_len > INT_MAX - 2) {
@@ -158,12 +188,12 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
     while (item) {
       if (!first) {
         size += 1; // Comma
-        if (pretty)
+        if (spaced)
           size += 1; // Space after comma
       }
 
       if (pretty) {
-        int indent_size = 2 + level * 2; // Newline and indentation
+        int indent_size = 1 + (level + 1) * indent_width;
         if (indent_size < 0 || size > INT_MAX - indent_size) {
           // Prevent integer overflow
           fprintf(stderr, "Error: JSON too large to serialize\n");
@@ -172,7 +202,7 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
         size += indent_size;
       }
 
-      int item_size = calculate_json_size(item->value, pretty, level + 1);
+      int item_size = calculate_json_size(item->value, flags, level + 1);
       if (item_size < 0 || size > INT_MAX - item_size) {
         // Prevent integer overflow
         fprintf(stderr, "Error: JSON too large to serialize\n");
@@ -185,8 +215,7 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
     }
 
     if (pretty && json->value.array_head) {
-      int indent_size =
-          1 + level * 2; // Newline and indentation for closing bracket
+      int indent_size = 1 + level * indent_width;
       if (indent_size < 0 || size > INT_MAX - indent_size) {
         // Prevent integer overflow
         fprintf(stderr, "Error: JSON too large to serialize\n");
@@ -206,12 +235,12 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
     while (kv) {
       if (!first) {
         size += 1; // Comma
-        if (pretty)
+        if (spaced)
           size += 1; // Space after comma
       }
 
       if (pretty) {
-        int indent_size = 2 + level * 2; // Newline and indentation
+        int indent_size = 1 + (level + 1) * indent_width;
         if (indent_size < 0 || size > INT_MAX - indent_size) {
           // Prevent integer overflow
           fprintf(stderr, "Error: JSON too large to serialize\n");
@@ -223,7 +252,7 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
       if (!kv->key) {
         size += 2; // Just quotes for NULL key
       } else {
-        char *escaped_key = escape_string(kv->key);
+        char *escaped_key = escape_string(kv->key, flags);
         if (escaped_key) {
           size_t escaped_len = strlen(escaped_key);
           if (escaped_len > INT_MAX - 2 ||
@@ -241,10 +270,10 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
       }
 
       size += 1; // Colon
-      if (pretty)
+      if (spaced)
         size += 1; // Space after colon
 
-      int value_size = calculate_json_size(kv->value, pretty, level + 1);
+      int value_size = calculate_json_size(kv->value, flags, level + 1);
       if (value_size < 0 || size > INT_MAX - value_size) {
         // Prevent integer overflow
         fprintf(stderr, "Error: JSON too large to serialize\n");
@@ -257,8 +286,7 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
     }
 
     if (pretty && json->value.object_head) {
-      int indent_size =
-          1 + level * 2; // Newline and indentation for closing brace
+      int indent_size = 1 + level * indent_width;
       if (indent_size < 0 || size > INT_MAX - indent_size) {
         // Prevent integer overflow
         fprintf(stderr, "Error: JSON too large to serialize\n");
@@ -277,7 +305,7 @@ static int calculate_json_size(JsonValue *json, int pretty, int level) {
 /**
  * Serializes a JSON value to a buffer
  */
-static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
+static int serialize_json_to_buffer(JsonValue *json, char *buffer, int flags,
                                     int level) {
   if (!json || !buffer) {
     strncpy(buffer, "null", 5);
@@ -291,6 +319,10 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
   }
 
   int pos = 0;
+  int pretty = json_format_is_pretty(flags);
+  int spaced = json_format_is_spaced(flags);
+  int indent_width = json_format_indent_width(flags);
+  char indent_char = json_format_indent_char(flags);
 
   switch (json->type) {
   case JSON_NULL:
@@ -326,7 +358,7 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
       buffer[pos++] = '"';
       buffer[pos] = '\0';
     } else {
-      char *escaped = escape_string(json->value.string);
+      char *escaped = escape_string(json->value.string, flags);
       if (escaped) {
         size_t escaped_len = strlen(escaped);
         if (escaped_len < INT_MAX) {
@@ -352,22 +384,22 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
     while (item) {
       if (!first) {
         buffer[pos++] = ',';
-        if (pretty)
+        if (spaced)
           buffer[pos++] = ' ';
       }
 
       if (pretty) {
         buffer[pos++] = '\n';
-        int indent = (level + 1) * 2;
+        int indent = (level + 1) * indent_width;
         // Limit indentation to prevent buffer overflow
         if (indent > 100)
           indent = 100;
         for (int i = 0; i < indent; i++) {
-          buffer[pos++] = ' ';
+          buffer[pos++] = indent_char;
         }
       }
 
-      int written = serialize_json_to_buffer(item->value, buffer + pos, pretty,
+      int written = serialize_json_to_buffer(item->value, buffer + pos, flags,
                                              level + 1);
       if (written < 0) {
         // Handle error
@@ -381,12 +413,12 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
 
     if (pretty && json->value.array_head) {
       buffer[pos++] = '\n';
-      int indent = level * 2;
+      int indent = level * indent_width;
       // Limit indentation to prevent buffer overflow
       if (indent > 100)
         indent = 100;
       for (int i = 0; i < indent; i++) {
-        buffer[pos++] = ' ';
+        buffer[pos++] = indent_char;
       }
     }
 
@@ -404,18 +436,18 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
     while (kv) {
       if (!first) {
         buffer[pos++] = ',';
-        if (pretty)
+        if (spaced)
           buffer[pos++] = ' ';
       }
 
       if (pretty) {
         buffer[pos++] = '\n';
-        int indent = (level + 1) * 2;
+        int indent = (level + 1) * indent_width;
         // Limit indentation to prevent buffer overflow
         if (indent > 100)
           indent = 100;
         for (int i = 0; i < indent; i++) {
-          buffer[pos++] = ' ';
+          buffer[pos++] = indent_char;
         }
       }
 
@@ -425,7 +457,7 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
         // Handle NULL key
         buffer[pos++] = '"';
       } else {
-        char *escaped_key = escape_string(kv->key);
+        char *escaped_key = escape_string(kv->key, flags);
         if (escaped_key) {
           size_t escaped_len = strlen(escaped_key);
           if (escaped_len < INT_MAX) {
@@ -441,11 +473,11 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
       }
 
       buffer[pos++] = ':';
-      if (pretty)
+      if (spaced)
         buffer[pos++] = ' ';
 
       int written =
-          serialize_json_to_buffer(kv->value, buffer + pos, pretty, level + 1);
+          serialize_json_to_buffer(kv->value, buffer + pos, flags, level + 1);
       if (written < 0) {
         // Handle error
         return pos;
@@ -458,12 +490,12 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
 
     if (pretty && json->value.object_head) {
       buffer[pos++] = '\n';
-      int indent = level * 2;
+      int indent = level * indent_width;
       // Limit indentation to prevent buffer overflow
       if (indent > 100)
         indent = 100;
       for (int i = 0; i < indent; i++) {
-        buffer[pos++] = ' ';
+        buffer[pos++] = indent_char;
       }
     }
 
@@ -485,14 +517,14 @@ static int serialize_json_to_buffer(JsonValue *json, char *buffer, int pretty,
  * @param pretty Whether to format the output with indentation
  * @return A newly allocated string containing the JSON representation
  */
-char *json_to_string(JsonValue *json, int pretty) {
+char *json_to_string_ext(JsonValue *json, int flags) {
   if (!json) {
     char *str = strdup("null");
     return str;
   }
 
   // Calculate the size needed for the JSON string
-  int size = calculate_json_size(json, pretty, 0);
+  int size = calculate_json_size(json, flags, 0);
 
   // Validate the calculated size
   if (size <= 0) {
@@ -514,7 +546,7 @@ char *json_to_string(JsonValue *json, int pretty) {
   }
 
   // Serialize the JSON value to the buffer
-  int written = serialize_json_to_buffer(json, str, pretty, 0);
+  int written = serialize_json_to_buffer(json, str, flags, 0);
 
   // Ensure proper null termination
   if (written >= 0 && written <= size + 15) {
@@ -525,4 +557,9 @@ char *json_to_string(JsonValue *json, int pretty) {
   }
 
   return str;
+}
+
+char *json_to_string(JsonValue *json, int pretty) {
+  return json_to_string_ext(
+      json, pretty ? JSON_C_TO_STRING_PRETTY : JSON_C_TO_STRING_PLAIN);
 }

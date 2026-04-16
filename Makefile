@@ -30,8 +30,9 @@ TARGET_LIB_STATIC = libjct.a
 TARGET_LIB_SHARED = libjct.so
 SONAME = libjct.so.1
 VERSION = 1.0.0
+COMPAT_TEST_BINS = test/test_compat_builders.bin test/test_compat_accessors.bin test/test_tokener_compat.bin
 
-.PHONY: all clean distclean release debug help test lib shared static install
+.PHONY: all clean distclean release debug help test compat-test lib shared static install
 
 # Default target - build CLI tool
 all: $(TARGET_CLI)
@@ -54,6 +55,7 @@ help:
 	@echo "  make clean            - Remove object files and executables"
 	@echo "  make distclean        - Remove all generated files"
 	@echo "  make test             - Run comprehensive test suite"
+	@echo "  make compat-test      - Run json-c compatibility tests"
 	@echo "  make help             - Show this help message"
 	@echo ""
 	@echo "Using CROSS_COMPILE:"
@@ -124,10 +126,26 @@ test: $(TARGET_CLI)
 	fi
 	@./test/run_tests.sh
 
+compat-test: $(COMPAT_TEST_BINS)
+	@echo "Running json-c compatibility tests..."
+	@./test/test_compat_builders.bin
+	@./test/test_compat_accessors.bin
+	@./test/test_tokener_compat.bin
+
+test/test_compat_builders.bin: test/test_compat_builders.c $(LIB_SOURCES)
+	$(CC) $(CFLAGS) -Isrc -o $@ $< $(LIB_SOURCES) $(LDFLAGS)
+
+test/test_compat_accessors.bin: test/test_compat_accessors.c $(LIB_SOURCES)
+	$(CC) $(CFLAGS) -Isrc -o $@ $< $(LIB_SOURCES) $(LDFLAGS) -lm
+
+test/test_tokener_compat.bin: test/test_tokener_compat.c $(LIB_SOURCES)
+	$(CC) $(CFLAGS) -Isrc -o $@ $< $(LIB_SOURCES) $(LDFLAGS)
+
 clean:
 	rm -f $(ALL_OBJECTS) $(TARGET_CLI) $(TARGET_LIB_STATIC) $(TARGET_LIB_SHARED) $(SONAME)
 	rm -f json_config_cli json_config_cli.mipsel
 	rm -f test/temp_config.json
+	rm -f $(COMPAT_TEST_BINS)
 
 # Distclean removes all generated files, including object files, executables, and any temporary files
 distclean: clean

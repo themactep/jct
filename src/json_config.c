@@ -492,14 +492,13 @@ static int merge_object_into(JsonValue *dest_obj, const JsonValue *src_obj) {
 int json_object_to_file_ext(const char *filename, json_object *obj, int flags) {
   FILE *file = NULL;
   char *serialized = NULL;
-  int pretty = (flags & JSON_C_TO_STRING_PRETTY) != 0;
   int ok = -1;
 
   if (!filename || !obj) {
     return -1;
   }
 
-  serialized = json_to_string(obj, pretty);
+  serialized = json_to_string_ext(obj, flags);
   if (!serialized) {
     return -1;
   }
