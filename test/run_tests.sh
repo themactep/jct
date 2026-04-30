@@ -252,6 +252,18 @@ echo -e "${BLUE}Testing special value parsing...${NC}"
 test_command "Set version string" "./jct $TEMP_CONFIG set app.version '1.2.3-beta'" "true"
 test_command "Set numeric string" "./jct $TEMP_CONFIG set app.build '20231201'" "true"
 test_command "Set decimal number" "./jct $TEMP_CONFIG set app.pi 3.14159" "true"
+# Regression: overwriting an existing string with digit-only content must remain a JSON string
+test_command "Seed rtsp password as string" "./jct $TEMP_CONFIG set rtsp.password x" "true"
+test_command "Overwrite rtsp password with leading-zero digits" "./jct $TEMP_CONFIG set rtsp.password '0123456'" "true"
+run_test "Get overwritten rtsp password" "0123456" "$(./jct $TEMP_CONFIG get rtsp.password)"
+ACTUAL=$(python3 - "$TEMP_CONFIG" <<'PY'
+import json, sys
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    value = json.load(f).get("rtsp", {}).get("password")
+print("ok" if isinstance(value, str) and value == "0123456" else f"bad:{type(value).__name__}:{value}")
+PY
+)
+run_test "RTSP password remains JSON string with leading zero" "ok" "$ACTUAL"
 # Test 15: Short-name resolution
 echo -e "${BLUE}Testing short-name resolution...${NC}"
 # Ensure clean slate

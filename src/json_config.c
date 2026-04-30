@@ -842,18 +842,39 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
 
   // Determine the value type and create the appropriate JSON value
   JsonValue *new_value = NULL;
+  const char *last_key = parts[part_count - 1];
+  JsonValue *existing_value = NULL;
 
-  if (strcmp(value_str, "true") == 0) {
+  if (current->type == JSON_OBJECT) {
+    existing_value = get_object_item(current, last_key);
+  } else if (current->type == JSON_ARRAY) {
+    char *endptr;
+    long index = strtol(last_key, &endptr, 10);
+    if (*endptr == '\0' && index >= 0) {
+      existing_value = get_array_item(current, (int)index);
+    }
+  }
+
+  // Keep existing string-typed keys as strings on update to avoid coercing
+  // values like "0123456" into integers.
+  if (existing_value && existing_value->type == JSON_STRING) {
+    new_value = create_json_value(JSON_STRING);
+    if (new_value) {
+      new_value->value.string = strdup(value_str);
+    }
+  }
+
+  if (!new_value && strcmp(value_str, "true") == 0) {
     new_value = create_json_value(JSON_BOOL);
     if (new_value)
       new_value->value.boolean = 1;
-  } else if (strcmp(value_str, "false") == 0) {
+  } else if (!new_value && strcmp(value_str, "false") == 0) {
     new_value = create_json_value(JSON_BOOL);
     if (new_value)
       new_value->value.boolean = 0;
-  } else if (strcmp(value_str, "null") == 0) {
+  } else if (!new_value && strcmp(value_str, "null") == 0) {
     new_value = create_json_value(JSON_NULL);
-  } else {
+  } else if (!new_value) {
     char *endptr;
     int64_t integer = 0;
     double num = 0.0;
@@ -883,7 +904,6 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
   }
 
   // Add or replace the item in the parent object
-  const char *last_key = parts[part_count - 1];
   int success = 0;
 
   if (current->type == JSON_OBJECT) {
