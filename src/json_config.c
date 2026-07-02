@@ -958,6 +958,65 @@ int set_nested_item(JsonValue *object, const char *key, const char *value_str) {
   return success;
 }
 
+/**
+ * Delete a nested key from a JSON object using dot-notation path.
+ *
+ * @param object The JSON object to modify
+ * @param key The dotted key path to delete
+ * @return 1 on success, 0 on failure
+ */
+int del_nested_item(JsonValue *object, const char *key) {
+  if (!object || !key) {
+    return 0;
+  }
+
+  char *key_copy = strdup(key);
+  if (!key_copy) {
+    fprintf(stderr, "Error: Memory allocation failed for key copy.\n");
+    return 0;
+  }
+
+  char *parts[256];
+  int part_count = 0;
+  char *token = strtok(key_copy, ".");
+
+  while (token != NULL && part_count < 256) {
+    parts[part_count++] = token;
+    token = strtok(NULL, ".");
+  }
+
+  if (part_count == 0) {
+    free(key_copy);
+    return 0;
+  }
+
+  /* Navigate to the parent object */
+  JsonValue *current = object;
+  for (int i = 0; i < part_count - 1; i++) {
+    if (current->type != JSON_OBJECT) {
+      free(key_copy);
+      return 0;
+    }
+    JsonValue *next = get_object_item(current, parts[i]);
+    if (!next) {
+      free(key_copy);
+      return 0; /* path doesn't exist, nothing to delete */
+    }
+    current = next;
+  }
+
+  /* Delete the last key from the parent object */
+  const char *last_key = parts[part_count - 1];
+  if (current->type == JSON_OBJECT) {
+    json_object_object_del((json_object *)current, last_key);
+    free(key_copy);
+    return 1;
+  }
+
+  free(key_copy);
+  return 0;
+}
+
 // Forward declaration for recursive printing
 static void print_json_value(JsonValue *item, int indent);
 

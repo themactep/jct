@@ -259,6 +259,28 @@ static int handle_path_command(const char *config_file, int argc, char *argv[],
   return 0;
 }
 
+// Function to handle the 'del' command
+static int handle_del_command(const char *config_file, const char *key) {
+  JsonValue *config = load_config(config_file);
+  if (!config) {
+    fprintf(stderr, "Error: Failed to load config file '%s'.\n", config_file);
+    return 1;
+  }
+
+  if (!del_nested_item(config, key)) {
+    /* Key not found is not an error — silently succeed */
+  }
+
+  if (save_config(config_file, config)) {
+    free_json_value(config);
+    return 0;
+  } else {
+    fprintf(stderr, "Error: Failed to save config file '%s'.\n", config_file);
+    free_json_value(config);
+    return 1;
+  }
+}
+
 // Function to print usage information
 static void print_usage(void) {
   printf("Usage: jct [--trace-resolve] <config_file> <command> [options]\n\n");
@@ -266,6 +288,8 @@ static void print_usage(void) {
   printf("  <config_file> get <key>              Get a value from the config "
          "file\n");
   printf("  <config_file> set <key> <value>      Set a value in the config "
+         "file\n");
+  printf("  <config_file> del <key>              Delete a key from the config "
          "file\n");
   printf("  <config_file> import <source_file>    Merge values from another "
          "JSON file\n");
@@ -592,7 +616,8 @@ int main(int argc, char *argv[]) {
 
   // Decide path handling per command
   if (strcmp(command, "get") == 0 || strcmp(command, "print") == 0 ||
-      strcmp(command, "restore") == 0 || strcmp(command, "path") == 0) {
+      strcmp(command, "restore") == 0 || strcmp(command, "path") == 0 ||
+      strcmp(command, "del") == 0) {
     // These require an existing readable file; apply short-name resolution
     int rc = resolve_config_target(config_target, trace_resolve, resolved_path,
                                    sizeof(resolved_path));
@@ -720,6 +745,13 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     return handle_set_command(cfg_for_handlers, argv[idxs[2]], argv[idxs[3]]);
+  } else if (strcmp(command, "del") == 0) {
+    if (nidx < 3) {
+      fprintf(stderr, "Error: 'del' command requires a key.\n");
+      print_usage();
+      return 1;
+    }
+    return handle_del_command(cfg_for_handlers, argv[idxs[2]]);
   } else if (strcmp(command, "create") == 0) {
     return handle_create_command(cfg_for_handlers);
   } else if (strcmp(command, "print") == 0) {
