@@ -75,7 +75,7 @@ make distclean       # Remove all generated files (complete cleanup)
 ## Usage
 
 ```
-Usage: jct [--trace-resolve] <config_file> <command> [options]
+Usage: jct <config_file> <command> [options]
 
 Commands:
   <config_file> get <key>              Get a value from the config file
@@ -86,66 +86,18 @@ Commands:
   <config_file> create                 Create a new empty config file
   <config_file> print                  Print the entire config file
   <config_file> restore                Restore config file to original state (OverlayFS)
+  <config_file> path <expression>      Query JSON using JSONPath (Goessner)
+  <config_file> del <key>              Delete a key from the config file
 
-Options:
-  --trace-resolve                      Trace short-name resolution steps (get/set/import/print/restore)
-
-Short-name resolution (when <config_file> has no '/' and does not end with .json):
-  Tries, in order: ./<name>, ./<name>.json, /etc/<name>.json (POSIX only)
-  - If none found: exit 2 with an error listing tried paths
-  - If a candidate exists but is not readable: exit 13 (do not try later candidates)
-  - Symlinks are followed; final target must be a regular file (directories are skipped)
-
-Creation rules:
-  - create requires an explicit path
-  - set may create a new file only with an explicit path
-  - import follows the same rule as set for its destination file; use an explicit path to create a new config
-  - Using a short name that does not resolve will not create; the command exits 2 with guidance
+<config_file> must always be an explicit path (e.g., ./config.json, /etc/prudynt.json).
 
 Examples:
-  jct prudynt get server.host           Resolve short name 'prudynt' and read
-  jct prudynt set app.name "My App"     Resolve and update existing; to create, use explicit path
-  jct ./prudynt set app.name "My App"   Explicit path; allowed to create
-  jct config.json print                 Print the entire config file
-  jct /etc/prudynt.json export > diff.json
-                                        Export differences (compares with /rom version)
-  jct modified.json export base.json > diff.json
-                                        Export differences between two files
+  jct ./prudynt.json get server.host           Read a value
+  jct ./config.json set app.name "My App"      Set a value
+  jct ./config.json print                      Print the entire config file
+  jct /etc/prudynt.json export > diff.json     Export differences (compares with /rom version)
+  jct modified.json export base.json > diff.json  Export differences between two files
 ```
-### Exit codes
-
-- 0: Success
-- 2: Not found
-  - Short name did not resolve to any candidate (get/print/restore/set)
-  - Short name used with create (and with set when it would create) — use an explicit path instead
-- 13: Permission denied
-  - A candidate file was found during short-name resolution but is not readable; later candidates are not tried
-
-Note: The restore command defines additional exit codes specific to OverlayFS operations; see the Restore section below for details.
-
-### Short-name resolution details
-
-When <config_file> is a short name (no path separators and no .json extension), jct searches for a JSON file deterministically:
-
-1. ./<name>
-2. ./<name>.json
-3. /etc/<name>.json (POSIX systems only)
-
-Rules:
-- If a candidate does not exist, jct continues to the next.
-- If a candidate exists and is a directory, it is skipped.
-- If a candidate exists, symlinks are followed and the final target must be a regular file.
-- If a candidate is a regular file but not readable, jct exits immediately with code 13 (permission denied) and does not try later candidates.
-- If no candidate is selected, jct exits with code 2 (not found) and prints:
-  jct: no JSON file found for '<name>'; tried: ./<name>, ./<name>.json[, /etc/<name>.json]
-
-Creation behavior:
-- create requires an explicit path; short names are not accepted for creation and will return code 2 with guidance.
-- set may create a new file only when invoked with an explicit path; using a short name that does not resolve will return code 2 and advise supplying an explicit path (e.g., ./<name>.json).
-
-Tip:
-- Use --trace-resolve to print the resolution steps and the final chosen path to stderr.
-
 
 ### Examples
 
@@ -246,6 +198,12 @@ Options:
 
 ```bash
 ./jct config.json print
+```
+
+#### Deleting a key
+
+```bash
+./jct config.json del server.host
 ```
 
 #### Restoring a configuration file to its original state (OverlayFS)

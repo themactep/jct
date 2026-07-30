@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Breaking:** Removed short-name resolution. `<config_file>` must always be an explicit path.
+  Removed `--trace-resolve` flag.
 - Added first-class JSONPath support (Goessner baseline) to CLI and library:
   - New `jct jsonpath <expression>` command with options: `--mode values|paths|pairs`, `--limit N`, `--strict`, `--pretty`, `--stdin`, `-f file.json`
   - Programmatic API: `evaluate_jsonpath(document, expression, options)` in C (see `src/jsonpath.h`)
