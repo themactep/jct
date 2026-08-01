@@ -4,11 +4,14 @@
 
 #include "json_config.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
+#include <libgen.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h> // for getpid() and unlink()
 
 /**
@@ -303,8 +306,99 @@ static int write_json_to_file(FILE *file, JsonValue *json, int indent) {
   return success;
 }
 
+/*
+ * Config writes are staged in a temporary file beside the target and
+ * rename()d over it. The temporary must be in the same directory as
+ * the target: rename() is atomic only within one filesystem, and that
+ * atomicity is what guarantees a concurrent reader sees either the
+ * old or the new complete file, and that a crash mid-write can never
+ * leave a truncated config behind.
+ */
+
+/**
+ * Opens a temporary file next to the target path
+ *
+ * @param filepath Target path the temporary will be renamed over
+ * @param temp_path Output buffer for the temporary file path
+ * @param temp_size Size of the output buffer
+ * @return Open FILE handle, or NULL on error
+ */
+static FILE *temp_file_open(const char *filepath, char *temp_path,
+                            size_t temp_size) {
+  int len =
+      snprintf(temp_path, temp_size, "%s.tmp.%ld", filepath, (long)getpid());
+  if (len < 0 || (size_t)len >= temp_size) {
+    fprintf(stderr, "Error: Target path too long: %s\n", filepath);
+    return NULL;
+  }
+
+  FILE *file = fopen(temp_path, "w");
+  if (!file) {
+    fprintf(stderr,
+            "Error: Failed to open temporary file '%s' for writing: %s\n",
+            temp_path, strerror(errno));
+    return NULL;
+  }
+
+  // Carry an existing target's permissions across the rename
+  struct stat st;
+  if (stat(filepath, &st) == 0) {
+    fchmod(fileno(file), st.st_mode & 07777);
+  }
+
+  return file;
+}
+
+/**
+ * Flushes a temporary file to disk and renames it over the target
+ *
+ * Consumes the FILE handle in all cases and unlinks the temporary
+ * file on failure.
+ *
+ * @param file Open handle returned by temp_file_open()
+ * @param temp_path Temporary file path
+ * @param filepath Target path
+ * @return 1 on success, 0 on failure
+ */
+static int temp_file_commit(FILE *file, const char *temp_path,
+                            const char *filepath) {
+  int flushed = (fflush(file) == 0) && (fsync(fileno(file)) == 0);
+  if (fclose(file) != 0) {
+    flushed = 0;
+  }
+  if (!flushed) {
+    fprintf(stderr, "Error: Failed to flush '%s': %s\n", temp_path,
+            strerror(errno));
+    unlink(temp_path);
+    return 0;
+  }
+
+  if (rename(temp_path, filepath) != 0) {
+    fprintf(stderr, "Error: Failed to rename '%s' to '%s': %s\n", temp_path,
+            filepath, strerror(errno));
+    unlink(temp_path);
+    return 0;
+  }
+
+  // Best effort: sync the directory so the rename itself is durable.
+  // Not every filesystem supports fsync on a directory handle.
+  char dir_path[512];
+  snprintf(dir_path, sizeof(dir_path), "%s", filepath);
+  int dir_fd = open(dirname(dir_path), O_RDONLY);
+  if (dir_fd >= 0) {
+    fsync(dir_fd);
+    close(dir_fd);
+  }
+
+  return 1;
+}
+
 /**
  * Saves JSON data to a file path
+ *
+ * The document is written to a temporary file in the same directory
+ * and atomically renamed over the target, so concurrent readers never
+ * see a partial file.
  *
  * @param filepath Path to save the JSON file
  * @param json The JSON object to save
@@ -316,141 +410,32 @@ int save_config(const char *filepath, JsonValue *json) {
           filepath ? filepath : "NULL", (void *)json);
 #endif
 
-  if (!json) {
-#ifdef DEBUG
-    fprintf(stderr, "DEBUG: save_config - json is NULL, returning 0\n");
-#endif
+  if (!filepath || !json) {
     return 0;
   }
 
-#ifdef DEBUG
-  fprintf(stderr, "DEBUG: save_config - json type=%d\n", json->type);
-#endif
-
-  // Create temporary file path
   char temp_filepath[512];
-  snprintf(temp_filepath, sizeof(temp_filepath),
-           "/tmp/prudynt_config_temp_%d.json", getpid());
-#ifdef DEBUG
-  fprintf(stderr, "DEBUG: save_config - using temporary file: %s\n",
-          temp_filepath);
-#endif
-
-  FILE *file = fopen(temp_filepath, "w");
+  FILE *file = temp_file_open(filepath, temp_filepath, sizeof(temp_filepath));
   if (!file) {
-    fprintf(stderr,
-            "Error: Failed to open temporary file '%s' for writing: %s\n",
-            temp_filepath, strerror(errno));
     return 0;
   }
 
-#ifdef DEBUG
-  fprintf(stderr, "DEBUG: save_config - about to call write_json_to_file\n");
-#endif
   int success = write_json_to_file(file, json, 0);
-#ifdef DEBUG
-  fprintf(stderr, "DEBUG: save_config - write_json_to_file returned %d\n",
-          success);
-#endif
 
   // Add a final newline
   if (success) {
     success = (fprintf(file, "\n") > 0);
-#ifdef DEBUG
-    fprintf(stderr, "DEBUG: save_config - added final newline, success=%d\n",
-            success);
-#endif
   }
 
-  fclose(file);
-
   if (!success) {
-    fprintf(stderr,
-            "Error: Failed to write complete JSON to temporary file '%s'.\n",
+    fprintf(stderr, "Error: Failed to write complete JSON to '%s'.\n",
             temp_filepath);
-    unlink(temp_filepath); // Remove the failed temporary file
+    fclose(file);
+    unlink(temp_filepath);
     return 0;
   }
 
-  // Atomically replace the original file with the temporary file
-#ifdef DEBUG
-  fprintf(stderr, "DEBUG: save_config - attempting to rename '%s' to '%s'\n",
-          temp_filepath, filepath);
-#endif
-  if (rename(temp_filepath, filepath) != 0) {
-    if (errno == EXDEV) {
-      // Cross-device link error - need to copy and delete instead
-#ifdef DEBUG
-      fprintf(stderr,
-              "DEBUG: Cross-device rename failed, trying copy method\n");
-#endif
-
-      FILE *src = fopen(temp_filepath, "r");
-      if (!src) {
-        fprintf(stderr,
-                "Error: Failed to open temporary file for copying: %s\n",
-                strerror(errno));
-        unlink(temp_filepath);
-        return 0;
-      }
-
-      FILE *dst = fopen(filepath, "w");
-      if (!dst) {
-        fprintf(stderr,
-                "Error: Failed to open destination file for copying: %s\n",
-                strerror(errno));
-        fclose(src);
-        unlink(temp_filepath);
-        return 0;
-      }
-
-      // Copy the file contents
-      char buffer[4096];
-      size_t bytes;
-      int copy_success = 1;
-      while ((bytes = fread(buffer, 1, sizeof(buffer), src)) > 0) {
-        if (fwrite(buffer, 1, bytes, dst) != bytes) {
-          fprintf(stderr, "Error: Failed to write during copy: %s\n",
-                  strerror(errno));
-          copy_success = 0;
-          break;
-        }
-      }
-
-      fclose(src);
-      fclose(dst);
-
-      if (!copy_success) {
-        unlink(temp_filepath);
-        return 0;
-      }
-
-      // Remove the temporary file
-      unlink(temp_filepath);
-#ifdef DEBUG
-      fprintf(stderr, "DEBUG: save_config - successfully copied temp file to "
-                      "destination\n");
-#endif
-    } else {
-      fprintf(stderr,
-              "Error: Failed to rename temporary file '%s' to '%s': %s\n",
-              temp_filepath, filepath, strerror(errno));
-      unlink(temp_filepath); // Clean up the temporary file
-      return 0;
-    }
-  } else {
-#ifdef DEBUG
-    fprintf(
-        stderr,
-        "DEBUG: save_config - successfully renamed temp file to destination\n");
-#endif
-  }
-
-#ifdef DEBUG
-  fprintf(stderr,
-          "DEBUG: save_config - completed successfully with atomic rename\n");
-#endif
-  return 1;
+  return temp_file_commit(file, temp_filepath, filepath);
 }
 
 // Helper that merges src object members into dest object recursively.
@@ -490,35 +475,32 @@ static int merge_object_into(JsonValue *dest_obj, const JsonValue *src_obj) {
 }
 
 int json_object_to_file_ext(const char *filename, json_object *obj, int flags) {
-  FILE *file = NULL;
-  char *serialized = NULL;
-  int ok = -1;
-
   if (!filename || !obj) {
     return -1;
   }
 
-  serialized = json_to_string_ext(obj, flags);
+  char *serialized = json_to_string_ext(obj, flags);
   if (!serialized) {
     return -1;
   }
 
-  file = fopen(filename, "w");
+  char temp_path[512];
+  FILE *file = temp_file_open(filename, temp_path, sizeof(temp_path));
   if (!file) {
     free(serialized);
     return -1;
   }
 
-  if (fputs(serialized, file) >= 0 && fputc('\n', file) != EOF && fclose(file) == 0) {
-    file = NULL;
-    ok = 0;
+  int ok = (fputs(serialized, file) >= 0 && fputc('\n', file) != EOF);
+  free(serialized);
+
+  if (!ok) {
+    fclose(file);
+    unlink(temp_path);
+    return -1;
   }
 
-  if (file) {
-    fclose(file);
-  }
-  free(serialized);
-  return ok;
+  return temp_file_commit(file, temp_path, filename) ? 0 : -1;
 }
 
 int merge_json_into(JsonValue **dest_ptr, const JsonValue *src) {

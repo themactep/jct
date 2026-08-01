@@ -264,48 +264,41 @@ print("ok" if isinstance(value, str) and value == "0123456" else f"bad:{type(val
 PY
 )
 run_test "RTSP password remains JSON string with leading zero" "ok" "$ACTUAL"
-# Test 15: Short-name resolution
-echo -e "${BLUE}Testing short-name resolution...${NC}"
+# Test 15: Literal path handling (short-name resolution was removed)
+echo -e "${BLUE}Testing literal path handling...${NC}"
 # Ensure clean slate
 rm -f prudynt prudynt.json
 
-# Candidate (a): ./prudynt (no extension)
+# A bare name is a literal relative path
 echo '{"x":1}' > prudynt
-run_test "Short-name selects ./prudynt" "1" "$(./jct prudynt get x)"
+run_test "Bare name reads exactly the file it names" "1" "$(./jct prudynt get x)"
 
-# Precedence: ./prudynt over ./prudynt.json
+# No resolution: a sibling .json file is never consulted
 echo '{"x":2}' > prudynt.json
-run_test "Precedence prefers ./prudynt over ./prudynt.json" "1" "$(./jct prudynt get x)"
+run_test "Sibling .json file is not consulted" "1" "$(./jct prudynt get x)"
 
-# Candidate (b): ./prudynt.json when ./prudynt absent
+# No fallback: a missing file is a plain load failure
 rm -f prudynt
-run_test "Falls back to ./prudynt.json when ./prudynt missing" "2" "$(./jct prudynt get x)"
+expect_exit_code "Missing file fails with exit 1 (no fallback)" "./jct prudynt get x" 1
+expect_stderr_contains "Missing file reports a load failure" "./jct prudynt get x" "Failed to load config file 'prudynt'"
 
-# Permission denied: unreadable ./prudynt halts and does not try later candidates
-echo '{"x":3}' > prudynt
-chmod 000 prudynt
-expect_exit_code "Unreadable candidate yields exit 13" "./jct prudynt get x" 13
-chmod 644 prudynt
-
-# Not found error lists tried paths
+# Unreadable file is a load failure too (skipped for root, which ignores modes)
+if [ "$(id -u)" -ne 0 ]; then
+    echo '{"x":3}' > prudynt
+    chmod 000 prudynt
+    expect_exit_code "Unreadable file fails with exit 1" "./jct prudynt get x" 1
+    chmod 644 prudynt
+fi
 rm -f prudynt prudynt.json
-expect_exit_code "Not found yields exit 2" "./jct prudynt get x" 2
-# Expect error message to include tried paths
-expect_stderr_contains "Not found error message lists candidates" "./jct prudynt get x" "jct: no JSON file found for 'prudynt'; tried: ./prudynt, ./prudynt.json"
-
-# Trace flag emits resolution steps
-echo '{"x":1}' > prudynt
-expect_stderr_contains "--trace-resolve emits trace" "./jct --trace-resolve prudynt get x" "[trace]"
-rm -f prudynt prudynt.json
-# Test 16: set/create behavior with short names vs explicit paths
-echo -e "${BLUE}Testing set/create behavior with short names vs explicit paths...${NC}"
+# Test 16: set/create with literal paths
+echo -e "${BLUE}Testing set/create with literal paths...${NC}"
 rm -f prudynt prudynt.json
 
-# set with short name must not create; should return 2 with guidance
-expect_exit_code "Short-name set does not create; exit 2" "./jct prudynt set app.name 'My App'" 2
-expect_stderr_contains "Set short-name guidance present" "./jct prudynt set app.name 'My App'" "to create a new file, supply an explicit path"
-# ensure not created
-test_command "No files created for short-name set" "test ! -f prudynt -a ! -f prudynt.json" "true"
+# set creates a missing file, bare relative path included
+expect_exit_code "set creates a missing file" "./jct prudynt set app.name 'My App'" 0
+run_test "Created file holds the value" "My App" "$(./jct prudynt get app.name)"
+run_test "set leaves no temporary file behind" "0" "$(ls prudynt.tmp.* 2>/dev/null | wc -l | tr -d ' ')"
+rm -f prudynt prudynt.json
 # Test 17: JSONPath command
 echo -e "${BLUE}Testing jsonpath command...${NC}"
 # $..author over books
@@ -346,6 +339,8 @@ run_test "jsonpath paths mode" "$EXPECTED" "$ACTUAL"
 # Pairs mode with limit
 ACTUAL=$(./jct test/books.json path '$..author' --mode pairs --limit 1 | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))')
 EXPECTED='[{"path":"$.store.book[0].author","value":"Nigel Rees"}]'
+run_test "jsonpath pairs mode with limit" "$EXPECTED" "$ACTUAL"
+
 # Unwrap single value
 ACTUAL=$(./jct test/test_data.json path '$.booleans.true_value' --unwrap-single)
 EXPECTED='true'
@@ -357,14 +352,26 @@ run_test "jsonpath unwrap single" "$EXPECTED" "$ACTUAL"
 expect_exit_code "Explicit path set can create new file" "./jct ./prudynt set app.name 'My App'" 0
 run_test "Explicit-created file has value" "My App" "$(./jct ./prudynt get app.name)"
 
-# create requires explicit path; short name should fail with 2 and guidance
+# create: bare relative paths work, existing files are refused
 rm -f prudynt prudynt.json
-expect_exit_code "Create with short name fails with 2" "./jct prudynt create" 2
-expect_stderr_contains "Create short-name guidance present" "./jct prudynt create" "requires an explicit path"
+expect_exit_code "Create works with a bare relative path" "./jct prudynt create" 0
+expect_exit_code "Create refuses an existing file" "./jct prudynt create" 1
+expect_stderr_contains "Create reports the existing file" "./jct prudynt create" "already exists"
 # create with explicit path succeeds
 expect_exit_code "Create with explicit path succeeds" "./jct prudynt.json create" 0
 # cleanup
 rm -f prudynt prudynt.json
+
+# A failed save must leave the target untouched (atomic replacement)
+if [ "$(id -u)" -ne 0 ]; then
+    rm -rf rodir && mkdir rodir
+    echo '{"x":9}' > rodir/cfg.json
+    chmod 555 rodir
+    expect_exit_code "Set into a read-only directory fails" "./jct rodir/cfg.json set x 10" 1
+    run_test "Failed save leaves the target intact" "9" "$(./jct rodir/cfg.json get x)"
+    chmod 755 rodir
+    rm -rf rodir
+fi
 
 
 

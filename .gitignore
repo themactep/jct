@@ -142,6 +142,7 @@ json_config_cli.mipsel
 
 # Test files
 test/temp_config.json
+test/*.bin
 test_*.json
 demo_*.json
 *_test
