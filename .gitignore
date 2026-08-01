@@ -182,6 +182,10 @@ doc/latex/
 .env
 .env.local
 
-# Keep test data files but ignore temporary test files
-!test/test_data.json
+# Ignore stray JSON files but keep the committed test fixtures.
+# The blanket pattern must come before the negations: a negation is
+# overridden by any later pattern that re-ignores the same path.
 *.json
+!test/test_data.json
+!test/books.json
+!test/telegrambot.json
