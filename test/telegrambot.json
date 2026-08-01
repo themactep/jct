@@ -1,0 +1,12 @@
+{
+  "telegrambot": {
+    "enabled": true,
+    "token": "REPLACE_WITH_YOUR_BOT_TOKEN",
+    "chat_id": "-1001234567890",
+    "caption": "Motion \"detected\" on %hostname\nsnapshot attached",
+    "commands": {
+      "/snap": "send a snapshot",
+      "/path": "C:\\Users\\test"
+    }
+  }
+}

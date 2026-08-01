@@ -1,0 +1,59 @@
+{
+  "strings": {
+    "simple": "hello world",
+    "empty": "",
+    "with_spaces": "  spaced  ",
+    "numeric_looking": "123.45",
+    "version": "1.2.3-beta",
+    "boolean_looking": "true",
+    "null_looking": "null"
+  },
+  "numbers": {
+    "integer": 42,
+    "negative": -17,
+    "zero": 0,
+    "float": 3.14159,
+    "negative_float": -2.718
+  },
+  "booleans": {
+    "true_value": true,
+    "false_value": false
+  },
+  "null_values": {
+    "explicit_null": null
+  },
+  "objects": {
+    "nested": {
+      "level1": {
+        "level2": {
+          "level3": {
+            "deep_value": "found it!"
+          }
+        }
+      }
+    }
+  },
+  "items": [
+    { "name": "item1" },
+    { "name": "item2" }
+  ],
+  "config_examples": {
+    "server": {
+      "host": "localhost",
+      "port": 8080
+    },
+    "database": {
+      "name": "myapp_production"
+    }
+  },
+  "arrays": {
+    "strings": ["apple", "banana", "cherry"],
+    "numbers": [1, 2, 3, 4, 5]
+  },
+  "edge_cases": {
+    "whitespace_only": "   ",
+    "path_like": "/usr/local/bin/app",
+    "url_like": "https://example.com/path?param=value",
+    "email_like": "user@example.com"
+  }
+}
